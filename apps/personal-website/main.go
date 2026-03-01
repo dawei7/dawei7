@@ -59,5 +59,11 @@ func projects() []templates.Project {
 			URL:         "https://github.com/dawei7/dawei7",
 			Tags:        []string{"Go", "Docker", "Traefik", "Infrastructure"},
 		},
+		{
+			Title:       "personal-website",
+			Description: "This site — built with Go, Templ, and HTMX. Server-rendered HTML fragments, no JavaScript framework.",
+			URL:         "https://github.com/dawei7/dawei7/tree/main/apps/personal-website",
+			Tags:        []string{"Go", "Templ", "HTMX"},
+		},
 	}
 }
