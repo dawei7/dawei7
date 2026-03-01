@@ -54,7 +54,9 @@ certificatesResolvers:
 # ─── PROVIDERS ────────────────────────────────────────────────────────────────
 providers:
   docker:
-    endpoint: "unix:///var/run/docker.sock"
+    # Connect via socket-proxy over TCP — bypasses Docker Engine 29 API version
+    # negotiation issue (server min: 1.44, Traefik client: 1.24)
+    endpoint: "tcp://socket-proxy:2375"
     exposedByDefault: false # containers must opt-in with traefik.enable=true
     network: proxy # default network for routing
     watch: true # auto-detect new containers

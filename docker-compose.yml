@@ -1,22 +1,38 @@
 services:
 
   # ─── REVERSE PROXY ────────────────────────────────────────────────────────────
+  # ─── DOCKER SOCKET PROXY ───────────────────────────────────────────────────────
+  # Traefik's internal Go client negotiates API 1.24, but Docker Engine 29+
+  # requires minimum 1.44. This proxy bridges the gap securely over TCP.
+  socket-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: socket-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      SERVICES: 1
+      NETWORKS: 1
+      TASKS: 1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - socket-proxy
+
   traefik:
     image: traefik:v3.3
     container_name: traefik
     restart: unless-stopped
-    environment:
-      # Force Docker client to use API 1.47 — required for Docker Engine 29+
-      - DOCKER_API_VERSION=1.47
+    depends_on:
+      - socket-proxy
     ports:
       - "80:80"
       - "443:443"
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik/traefik.yml:/traefik.yml:ro
       - ./traefik/acme.json:/acme.json          # chmod 600 on server!
     networks:
       - proxy
+      - socket-proxy
     labels:
       - "traefik.enable=true"
       # Traefik dashboard — accessible at https://traefik.dawei7.com
@@ -108,6 +124,8 @@ networks:
   proxy:
     external: true
   internal:
+    external: false
+  socket-proxy:
     external: false
 
 volumes:
