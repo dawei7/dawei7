@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* Scan templ files for class names */
+@source "templates/**/*.templ";
+
+/* HTMX loading indicator — requires parent class selector, not doable with utilities */
+@layer utilities {
+  .htmx-indicator {
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+  .htmx-request .htmx-indicator {
+    opacity: 1;
+  }
+}

@@ -9,42 +9,42 @@ type Project struct {
 
 templ Home(projects []Project) {
 	@Base("David Schmid — dawei7.com") {
-		<div class="container">
-			<header>
-				<h1>David Schmid</h1>
-				<p>Data Engineer · AI Enthusiast · <a href="https://www.axpo.com" target="_blank">Axpo Solutions AG</a></p>
-				<nav>
-					<a href="https://github.com/dawei7" target="_blank">GitHub</a>
-					<a href="mailto:davidschmid121186@gmail.com">Contact</a>
+		<div class="max-w-2xl mx-auto px-6">
+			<header class="py-12 pb-8 border-b border-zinc-800">
+				<h1 class="text-3xl font-bold tracking-tight">David Schmid</h1>
+				<p class="mt-1.5 text-zinc-500 text-sm">
+					Data Engineer · AI Enthusiast · <a href="https://www.axpo.com" target="_blank" class="text-violet-400 hover:underline">Axpo Solutions AG</a>
+				</p>
+				<nav class="mt-4 flex gap-6 text-sm">
+					<a href="https://github.com/dawei7" target="_blank" class="text-zinc-500 hover:text-zinc-200 transition-colors">GitHub</a>
+					<a href="mailto:davidschmid121186@gmail.com" class="text-zinc-500 hover:text-zinc-200 transition-colors">Contact</a>
 				</nav>
 			</header>
-			<main>
-				<section>
-					<h2>About</h2>
-					<div class="card">
-						<p>
+			<main class="py-12">
+				<section class="mb-12">
+					<h2 class="text-xs font-semibold tracking-widest uppercase text-zinc-500 mb-5">About</h2>
+					<div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5">
+						<p class="text-sm text-zinc-400">
 							I build data pipelines, backend systems, and AI-powered tools.
 							Based in Switzerland, working at Axpo Solutions AG on large-scale energy data.
-							I post all my personal projects here at <strong>dawei7.com</strong>.
+							I post all my personal projects here at <strong class="text-zinc-200">dawei7.com</strong>.
 						</p>
 					</div>
 				</section>
-				<section>
-					<h2>Projects</h2>
+				<section class="mb-12">
+					<h2 class="text-xs font-semibold tracking-widest uppercase text-zinc-500 mb-5">Projects</h2>
 					<div
 						id="projects-list"
 						hx-get="/api/projects"
 						hx-trigger="load"
 						hx-swap="innerHTML"
 					>
-						<div class="htmx-indicator">Loading...</div>
+						<div class="htmx-indicator text-zinc-500 text-sm">Loading...</div>
 					</div>
 				</section>
 			</main>
-			<footer>
-				<div class="container">
-					dawei7.com — built with Go + Templ + HTMX
-				</div>
+			<footer class="py-8 border-t border-zinc-800 text-zinc-500 text-sm">
+				dawei7.com — built with Go + Templ + HTMX
 			</footer>
 		</div>
 	}
@@ -52,18 +52,18 @@ templ Home(projects []Project) {
 
 templ ProjectList(projects []Project) {
 	for _, p := range projects {
-		<div class="card">
-			<h3>
+		<div class="bg-zinc-900 border border-zinc-800 rounded-lg p-5 mb-3 hover:border-zinc-700 transition-colors">
+			<h3 class="text-base font-semibold mb-1">
 				if p.URL != "" {
-					<a href={ templ.SafeURL(p.URL) } target="_blank">{ p.Title }</a>
+					<a href={ templ.SafeURL(p.URL) } target="_blank" class="text-violet-400 hover:underline">{ p.Title }</a>
 				} else {
 					{ p.Title }
 				}
 			</h3>
-			<p>{ p.Description }</p>
+			<p class="text-sm text-zinc-500 mb-3">{ p.Description }</p>
 			<div>
 				for _, tag := range p.Tags {
-					<span class="tag">{ tag }</span>
+					<span class="inline-block text-xs px-2 py-0.5 rounded-full bg-indigo-950 text-violet-400 border border-indigo-900 mr-1 mt-1">{ tag }</span>
 				}
 			</div>
 		</div>

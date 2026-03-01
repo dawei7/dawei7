@@ -29,3 +29,6 @@ docker-compose.local.yml
 
 # AI context — local ops cheatsheet, never commit
 docs/context.md
+
+# Tailwind — downloaded binary only (style.css is committed as placeholder; CI regenerates it)
+apps/personal-website/tailwindcss.exe

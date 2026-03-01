@@ -1,12 +1,16 @@
 package main
 
 import (
+	_ "embed"
 	"log"
 	"net/http"
 	"os"
 
 	"github.com/dawei7/dawei7/apps/personal-website/templates"
 )
+
+//go:embed public/style.css
+var styleCSS []byte
 
 func main() {
 	port := os.Getenv("PORT")
@@ -34,6 +38,13 @@ func main() {
 		if err := templates.ProjectList(projects()).Render(r.Context(), w); err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
+	})
+
+	// Compiled Tailwind CSS
+	mux.HandleFunc("GET /static/style.css", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/css; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		w.Write(styleCSS)
 	})
 
 	// Health check (used by Traefik and CI)
