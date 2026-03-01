@@ -1,0 +1,21 @@
+# Environment — NEVER commit secrets
+.env
+
+# Let's Encrypt certs — managed by Traefik on server
+traefik/acme.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Personal local overrides — use docker-compose.local.yml for machine-specific settings
+docker-compose.local.yml

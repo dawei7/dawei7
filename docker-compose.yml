@@ -1,0 +1,112 @@
+services:
+
+  # ─── REVERSE PROXY ────────────────────────────────────────────────────────────
+  traefik:
+    image: traefik:v3.0
+    container_name: traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/traefik.yml:ro
+      - ./traefik/acme.json:/acme.json          # chmod 600 on server!
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      # Traefik dashboard — accessible at https://traefik.dawei7.com
+      - "traefik.http.routers.traefik.rule=Host(`traefik.dawei7.com`)"
+      - "traefik.http.routers.traefik.entrypoints=websecure"
+      - "traefik.http.routers.traefik.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.traefik.service=api@internal"
+      - "traefik.http.routers.traefik.middlewares=auth"
+      # Basic auth for dashboard: generate with `htpasswd -nb user password`
+      # Replace the value below after generating your own
+      - "traefik.http.middlewares.auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
+
+  # ─── DATABASE ─────────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:17-alpine
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - internal
+    # Tune for 16GB RAM server — see postgres/postgresql.conf for full tuning
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c effective_cache_size=4GB
+      -c maintenance_work_mem=128MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c max_connections=200
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── CACHE / SESSIONS / QUEUES ────────────────────────────────────────────────
+  redis:
+    image: redis:8-alpine
+    container_name: redis
+    restart: unless-stopped
+    command: >
+      redis-server
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes
+    volumes:
+      - redis_data:/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─── PERSONAL WEBSITE ─────────────────────────────────────────────────────────
+  personal-website:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/personal-website:latest
+    container_name: personal-website
+    restart: unless-stopped
+    environment:
+      - APP_ENV=production
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.website.rule=Host(`dawei7.com`) || Host(`www.dawei7.com`)"
+      - "traefik.http.routers.website.entrypoints=websecure"
+      - "traefik.http.routers.website.tls.certresolver=letsencrypt"
+      # Redirect www → apex
+      - "traefik.http.middlewares.www-redirect.redirectregex.regex=^https://www\\.dawei7\\.com/(.*)"
+      - "traefik.http.middlewares.www-redirect.redirectregex.replacement=https://dawei7.com/$${1}"
+      - "traefik.http.middlewares.www-redirect.redirectregex.permanent=true"
+      - "traefik.http.routers.website.middlewares=www-redirect"
+
+  # ─── ADD NEW APPS BELOW ───────────────────────────────────────────────────────
+  # Copy the personal-website block, change:
+  #   container_name, image name, Host() label to your-app.dawei7.com
+  #   Add `- internal` to networks if the app needs DB/Redis
+
+networks:
+  proxy:
+    external: true
+  internal:
+    external: false
+
+volumes:
+  postgres_data:
+  redis_data:

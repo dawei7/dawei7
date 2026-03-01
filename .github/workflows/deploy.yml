@@ -1,0 +1,48 @@
+# This workflow deploys the full server stack (infrastructure services).
+# For individual apps, each app repo has its own deploy workflow that
+# SSHs in and pulls only its image.
+
+name: Deploy Server Stack
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # allow manual trigger from GitHub UI
+
+jobs:
+  deploy:
+    name: Deploy to dawei7.com
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy stack to VPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_KEY }}
+          port: ${{ secrets.VPS_PORT || 22 }}
+          script: |
+            set -e
+            cd /opt/server
+
+            echo "Pulling latest config..."
+            git pull origin main
+
+            echo "Pulling latest images..."
+            docker compose pull
+
+            echo "Restarting services..."
+            docker compose up -d --remove-orphans
+
+            echo "Cleaning up old images..."
+            docker image prune -f
+
+            echo "Deploy complete ✓"
+
+      - name: Notify on failure
+        if: failure()
+        run: echo "Deploy failed! Check GitHub Actions logs."

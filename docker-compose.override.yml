@@ -1,0 +1,33 @@
+# docker-compose.override.yml — LOCAL DEVELOPMENT ONLY
+# This file is git-ignored. It overrides settings for running the stack locally.
+# Usage: docker compose up  (Docker auto-merges this with docker-compose.yml)
+
+services:
+
+  traefik:
+    # Expose dashboard insecurely on localhost for local dev
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "8080:8080"   # Traefik dashboard at http://localhost:8080
+
+  postgres:
+    # Expose postgres port locally so you can connect with DBeaver / psql
+    ports:
+      - "5432:5432"
+
+  redis:
+    # Expose redis locally so you can use redis-cli / RedisInsight
+    ports:
+      - "6379:6379"
+
+  personal-website:
+    # Build locally instead of pulling from ghcr.io
+    build:
+      context: ./apps/personal-website
+    image: personal-website:dev
+    ports:
+      - "3000:8080"   # http://localhost:3000
