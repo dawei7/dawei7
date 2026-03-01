@@ -10,34 +10,9 @@ on:
   workflow_dispatch: # allow manual trigger from GitHub UI
 
 jobs:
-  build-proxy:
-    name: Build docker-api-proxy
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Log in to ghcr.io
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push docker-api-proxy
-        uses: docker/build-push-action@v5
-        with:
-          context: ./docker-api-proxy
-          push: true
-          tags: ghcr.io/dawei7/docker-api-proxy:latest
-
   deploy:
     name: Deploy to dawei7.com
     runs-on: ubuntu-latest
-    needs: build-proxy
 
     steps:
       - name: Checkout
@@ -58,7 +33,10 @@ jobs:
             git pull origin main
 
             echo "Pulling latest images..."
-            docker compose pull
+            docker compose pull --ignore-buildable
+
+            echo "Building local images..."
+            docker compose build socket-proxy
 
             echo "Restarting services..."
             docker compose up -d --remove-orphans
@@ -67,7 +45,3 @@ jobs:
             docker image prune -f
 
             echo "Deploy complete ✓"
-
-      - name: Notify on failure
-        if: failure()
-        run: echo "Deploy failed! Check GitHub Actions logs."
