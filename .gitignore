@@ -1,5 +1,6 @@
 # Environment — NEVER commit secrets
 .env
+secrets/
 
 # Let's Encrypt certs — managed by Traefik on server
 traefik/acme.json
@@ -19,3 +20,6 @@ Thumbs.db
 
 # Personal local overrides — use docker-compose.local.yml for machine-specific settings
 docker-compose.local.yml
+
+# AI context — local ops cheatsheet, never commit
+docs/context.md
