@@ -48,8 +48,7 @@ certificatesResolvers:
     acme:
       email: davidschmid121186@gmail.com
       storage: /acme.json
-      httpChallenge:
-        entryPoint: web
+      tlsChallenge: {}
 
 # ─── PROVIDERS ────────────────────────────────────────────────────────────────
 providers:
