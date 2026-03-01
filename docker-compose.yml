@@ -1,18 +1,15 @@
 services:
 
   # ─── REVERSE PROXY ────────────────────────────────────────────────────────────
-  # ─── DOCKER SOCKET PROXY ───────────────────────────────────────────────────────
-  # Traefik's internal Go client negotiates API 1.24, but Docker Engine 29+
-  # requires minimum 1.44. This proxy bridges the gap securely over TCP.
+  # ─── DOCKER API PROXY ────────────────────────────────────────────────────────
+  # Translates Docker API v1.24 calls (hardcoded in Traefik) → v1.44
+  # Required because Docker Engine 29+ enforces minimum API version 1.44
   socket-proxy:
-    image: tecnativa/docker-socket-proxy:latest
+    build:
+      context: ./docker-api-proxy
+    image: dawei7/docker-api-proxy:latest
     container_name: socket-proxy
     restart: unless-stopped
-    environment:
-      CONTAINERS: 1
-      SERVICES: 1
-      NETWORKS: 1
-      TASKS: 1
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
