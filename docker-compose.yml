@@ -7,7 +7,7 @@ services:
   socket-proxy:
     build:
       context: ./docker-api-proxy
-    image: dawei7/docker-api-proxy:latest
+    image: ghcr.io/dawei7/docker-api-proxy:latest
     container_name: socket-proxy
     restart: unless-stopped
     volumes:
