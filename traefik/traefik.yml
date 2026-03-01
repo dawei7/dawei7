@@ -46,7 +46,7 @@ entryPoints:
 certificatesResolvers:
   letsencrypt:
     acme:
-      email: your-email@example.com # ← change this
+      email: davidschmid121186@gmail.com
       storage: /acme.json
       httpChallenge:
         entryPoint: web
