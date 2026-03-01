@@ -1,0 +1,71 @@
+package templates
+
+type Project struct {
+	Title       string
+	Description string
+	URL         string
+	Tags        []string
+}
+
+templ Home(projects []Project) {
+	@Base("David Schmid — dawei7.com") {
+		<div class="container">
+			<header>
+				<h1>David Schmid</h1>
+				<p>Data Engineer · AI Enthusiast · <a href="https://www.axpo.com" target="_blank">Axpo Solutions AG</a></p>
+				<nav>
+					<a href="https://github.com/dawei7" target="_blank">GitHub</a>
+					<a href="mailto:davidschmid121186@gmail.com">Contact</a>
+				</nav>
+			</header>
+			<main>
+				<section>
+					<h2>About</h2>
+					<div class="card">
+						<p>
+							I build data pipelines, backend systems, and AI-powered tools.
+							Based in Switzerland, working at Axpo Solutions AG on large-scale energy data.
+							I post all my personal projects here at <strong>dawei7.com</strong>.
+						</p>
+					</div>
+				</section>
+				<section>
+					<h2>Projects</h2>
+					<div
+						id="projects-list"
+						hx-get="/api/projects"
+						hx-trigger="load"
+						hx-swap="innerHTML"
+					>
+						<div class="htmx-indicator">Loading...</div>
+					</div>
+				</section>
+			</main>
+			<footer>
+				<div class="container">
+					dawei7.com — built with Go + Templ + HTMX
+				</div>
+			</footer>
+		</div>
+	}
+}
+
+templ ProjectList(projects []Project) {
+	for _, p := range projects {
+		<div class="card">
+			<h3>
+				if p.URL != "" {
+					<a href={ templ.SafeURL(p.URL) } target="_blank">{ p.Title }</a>
+				} else {
+					{ p.Title }
+				}
+			</h3>
+			<p>{ p.Description }</p>
+			<div>
+				for _, tag := range p.Tags {
+					<span class="tag">{ tag }</span>
+				}
+			</div>
+		</div>
+	}
+}

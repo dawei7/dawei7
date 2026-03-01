@@ -1,6 +1,6 @@
-# docker-compose.override.yml — LOCAL DEVELOPMENT ONLY
-# This file is git-ignored. It overrides settings for running the stack locally.
-# Usage: docker compose up  (Docker auto-merges this with docker-compose.yml)
+# docker-compose.dev.yml — LOCAL DEVELOPMENT ONLY
+# NOT auto-loaded — must be passed explicitly with -f
+# Usage: docker compose -f docker-compose.dev.yml up postgres redis -d
 
 services:
 
