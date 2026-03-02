@@ -50,6 +50,8 @@ jobs:
     name: Deploy on VPS
     runs-on: self-hosted
     needs: build
+    environment: production
+    if: github.repository_owner == 'dawei7' && github.ref == 'refs/heads/main'
 
     steps:
       - name: Pull & restart
