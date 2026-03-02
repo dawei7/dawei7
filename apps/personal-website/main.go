@@ -76,5 +76,11 @@ func projects() []templates.Project {
 			URL:         "https://github.com/dawei7/dawei7/tree/main/apps/personal-website",
 			Tags:        []string{"Go", "Templ", "HTMX"},
 		},
+		{
+			Title:       "Bible Reader · Smart Search",
+			Description: "Full-text search across 19 Bible translations with prophecy tracking, TTS, and offline PWA support.",
+			URL:         "https://bible.dawei7.com",
+			Tags:        []string{"Next.js", "TypeScript", "Tailwind", "PWA"},
+		},
 	}
 }
