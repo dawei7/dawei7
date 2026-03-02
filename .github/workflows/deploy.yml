@@ -1,47 +1,39 @@
 # This workflow deploys the full server stack (infrastructure services).
-# For individual apps, each app repo has its own deploy workflow that
-# SSHs in and pulls only its image.
+# Runs directly on the self-hosted runner on the VPS — no inbound SSH needed.
 
 name: Deploy Server Stack
 
 on:
   push:
     branches: [main]
-  workflow_dispatch: # allow manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   deploy:
     name: Deploy to dawei7.com
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
+    environment: production
+    if: github.repository_owner == 'dawei7' && github.ref == 'refs/heads/main'
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Pull latest config & restart stack
+        run: |
+          set -e
+          cd /opt/server
 
-      - name: Deploy stack to VPS
-        uses: appleboy/ssh-action@v1
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          key: ${{ secrets.VPS_SSH_KEY }}
-          port: ${{ secrets.VPS_PORT || 22 }}
-          script: |
-            set -e
-            cd /opt/server
+          echo "Pulling latest config..."
+          git pull origin main
 
-            echo "Pulling latest config..."
-            git pull origin main
+          echo "Pulling latest images..."
+          docker compose pull --ignore-buildable
 
-            echo "Pulling latest images..."
-            docker compose pull --ignore-buildable
+          echo "Building local images..."
+          docker compose build socket-proxy
 
-            echo "Building local images..."
-            docker compose build socket-proxy
+          echo "Restarting services..."
+          docker compose up -d --remove-orphans
 
-            echo "Restarting services..."
-            docker compose up -d --remove-orphans
+          echo "Cleaning up old images..."
+          docker image prune -f
 
-            echo "Cleaning up old images..."
-            docker image prune -f
-
-            echo "Deploy complete ✓"
+          echo "Deploy complete ✓"
