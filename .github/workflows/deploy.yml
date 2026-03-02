@@ -22,7 +22,8 @@ jobs:
           cd /opt/server
 
           echo "Pulling latest config..."
-          git pull origin main
+          git fetch origin main
+          git reset --hard origin/main
 
           echo "Pulling latest images..."
           docker compose pull --ignore-buildable
