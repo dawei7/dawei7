@@ -117,6 +117,20 @@ services:
   #   container_name, image name, Host() label to your-app.dawei7.com
   #   Add `- internal` to networks if the app needs DB/Redis
 
+  # ─── BIBLE READER ────────────────────────────────────────────────────────────
+  bible-reader:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/bible-reader:latest
+    container_name: bible-reader
+    restart: unless-stopped
+    networks:
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.bible.rule=Host(`bible.dawei7.com`)"
+      - "traefik.http.routers.bible.entrypoints=websecure"
+      - "traefik.http.routers.bible.tls.certresolver=letsencrypt"
+      - "traefik.http.services.bible.loadbalancer.server.port=3000"
+
 networks:
   proxy:
     external: true

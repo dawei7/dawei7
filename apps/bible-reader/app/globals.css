@@ -1,0 +1,68 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
+  --font-serif: ui-serif, Georgia, Cambria, serif;
+  --font-mono: ui-monospace, SFMono-Regular, monospace;
+}
+
+:root {
+  --reader-font-size: 16px;
+  --reader-line-height: 28px;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply antialiased;
+}
+
+/* Custom scrollbar */
+.fancy-hscroll::-webkit-scrollbar {
+  height: 4px;
+}
+.fancy-hscroll::-webkit-scrollbar-track {
+  @apply bg-slate-100 dark:bg-slate-800;
+}
+.fancy-hscroll::-webkit-scrollbar-thumb {
+  @apply bg-slate-300 dark:bg-slate-600 rounded-full;
+}
+
+/* Stats scroll */
+.stats-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+.stats-scroll::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 dark:bg-slate-700 rounded-full;
+}
+
+/* Verse highlight animation */
+@keyframes verse-flash {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  30% {
+    background-color: oklch(0.97 0.02 80);
+  }
+}
+
+.verse-flash {
+  animation: verse-flash 1.2s ease-in-out;
+}
+
+.dark .verse-flash {
+  animation: verse-flash-dark 1.2s ease-in-out;
+}
+
+@keyframes verse-flash-dark {
+  0%,
+  100% {
+    background-color: transparent;
+  }
+  30% {
+    background-color: oklch(0.3 0.03 260);
+  }
+}
