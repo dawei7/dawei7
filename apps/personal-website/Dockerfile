@@ -1,5 +1,5 @@
 # ─── Build Stage ──────────────────────────────────────────────────────────────
-FROM golang:1.24-alpine AS builder
+FROM golang:1.24 AS builder
 
 WORKDIR /app
 
@@ -8,7 +8,8 @@ RUN go install github.com/a-h/templ/cmd/templ@latest
 
 # Install Tailwind CSS standalone CLI
 # Resolve the actual latest version tag via API (avoids broken /latest/download/ redirect)
-RUN apk add --no-cache curl \
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
     && TWCSS_VER=$(curl -fsSL "https://api.github.com/repos/tailwindlabs/tailwindcss/releases/latest" \
     | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
     && echo "Downloading tailwindcss ${TWCSS_VER}" \
