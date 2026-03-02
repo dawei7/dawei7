@@ -6,11 +6,16 @@ WORKDIR /app
 # Install templ CLI
 RUN go install github.com/a-h/templ/cmd/templ@latest
 
-# Install Tailwind CSS standalone CLI (curl follows HTTPS redirects; wget/busybox does not)
+# Install Tailwind CSS standalone CLI
+# Resolve the actual latest version tag via API (avoids broken /latest/download/ redirect)
 RUN apk add --no-cache curl \
-    && curl -fsSLo /usr/local/bin/tailwindcss \
-       https://github.com/tailwindlabs/tailwindcss/releases/latest/download/tailwindcss-linux-x64 \
-    && chmod +x /usr/local/bin/tailwindcss
+    && TWCSS_VER=$(curl -fsSL "https://api.github.com/repos/tailwindlabs/tailwindcss/releases/latest" \
+    | grep '"tag_name"' | head -1 | cut -d'"' -f4) \
+    && echo "Downloading tailwindcss ${TWCSS_VER}" \
+    && curl -fSL "https://github.com/tailwindlabs/tailwindcss/releases/download/${TWCSS_VER}/tailwindcss-linux-x64" \
+    -o /usr/local/bin/tailwindcss \
+    && chmod +x /usr/local/bin/tailwindcss \
+    && tailwindcss --version
 
 COPY go.mod go.sum ./
 RUN go mod download
