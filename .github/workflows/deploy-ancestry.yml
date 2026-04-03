@@ -57,10 +57,8 @@ jobs:
       - name: Apply DB schema
         run: |
           cd /opt/server
-          docker exec -i postgres psql -U $POSTGRES_USER -d $POSTGRES_DB < postgres/init/02-ancestry.sql
-        env:
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          set -a && source .env && set +a
+          docker exec -i postgres psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" < postgres/init/02-ancestry.sql
 
       - name: Pull & restart
         env:
