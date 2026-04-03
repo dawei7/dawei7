@@ -32,6 +32,16 @@ services:
     ports:
       - "3000:8080"   # http://localhost:3000
 
+  ancestry:
+    # Build locally instead of pulling from ghcr.io
+    build:
+      context: ./apps/ancestry
+    image: ancestry:dev
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}?sslmode=disable
+    ports:
+      - "3002:8080"   # http://localhost:3002
+
   bible-reader:
     # Build locally instead of pulling from ghcr.io
     build:

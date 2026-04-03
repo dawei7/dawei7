@@ -117,6 +117,26 @@ services:
   #   container_name, image name, Host() label to your-app.dawei7.com
   #   Add `- internal` to networks if the app needs DB/Redis
 
+  # ─── ANCESTRY ────────────────────────────────────────────────────────────────
+  ancestry:
+    image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/ancestry:latest
+    container_name: ancestry
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - proxy
+      - internal
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.ancestry.rule=Host(`ancestry.dawei7.com`)"
+      - "traefik.http.routers.ancestry.entrypoints=websecure"
+      - "traefik.http.routers.ancestry.tls.certresolver=letsencrypt"
+      - "traefik.http.services.ancestry.loadbalancer.server.port=8080"
+
   # ─── BIBLE READER ────────────────────────────────────────────────────────────
   bible-reader:
     image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/bible-reader:latest

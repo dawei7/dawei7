@@ -1,0 +1,30 @@
+{
+  "name": "ancestry-ui",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "d3": "^7.9.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router": "^7.5.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.1",
+    "@types/d3": "^7.4.3",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.0.0",
+    "eslint-config-react-app": "^7.0.1",
+    "tailwindcss": "^4.1.1",
+    "typescript": "^5.7.2",
+    "vite": "^6.2.0"
+  }
+}

@@ -1,5 +1,6 @@
 # Environment — NEVER commit secrets
 .env
+.venv/
 secrets/
 
 # Let's Encrypt certs — managed by Traefik on server
