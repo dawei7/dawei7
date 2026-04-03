@@ -82,5 +82,11 @@ func projects() []templates.Project {
 			URL:         "https://bible.dawei7.com",
 			Tags:        []string{"Next.js", "TypeScript", "Tailwind", "PWA"},
 		},
+		{
+			Title:       "Ancestry Tree",
+			Description: "Private family tree explorer with pedigree visualization, GEDCOM import, and interactive D3 ancestor tree.",
+			URL:         "https://ancestry.dawei7.com",
+			Tags:        []string{"Go", "React", "D3.js", "PostgreSQL"},
+		},
 	}
 }
