@@ -54,6 +54,14 @@ jobs:
     if: github.repository_owner == 'dawei7' && github.ref == 'refs/heads/main'
 
     steps:
+      - name: Apply DB schema
+        run: |
+          cd /opt/server
+          docker exec -i postgres psql -U $POSTGRES_USER -d $POSTGRES_DB < postgres/init/02-ancestry.sql
+        env:
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+
       - name: Pull & restart
         env:
           IMAGE: ${{ env.IMAGE }}
