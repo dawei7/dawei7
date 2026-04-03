@@ -45,6 +45,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict]:
     current: dict | None = None
     current_type: str | None = None   # "INDI" or "FAM"
     current_event: str | None = None  # "BIRT", "DEAT", "MARR", …
+    current_name_is_maiden: bool = False  # True while processing a maiden NAME context
 
     with open(path, encoding="utf-8-sig") as fh:
         for raw in fh:
@@ -67,6 +68,7 @@ def parse_gedcom(path: str) -> tuple[dict, dict]:
             # ── Level 0: start of a new top-level record ──────────────────
             if level == 0:
                 current_event = None
+                current_name_is_maiden = False
                 if tag_or_xref.startswith("@") and value in ("INDI", "FAM"):
                     gedcom_id = tag_or_xref.strip("@")
                     current = {"gedcom_id": gedcom_id}
@@ -86,25 +88,37 @@ def parse_gedcom(path: str) -> tuple[dict, dict]:
             # ── Level 1 ───────────────────────────────────────────────────
             if level == 1:
                 current_event = None
+                current_name_is_maiden = False
 
                 if tag_or_xref == "NAME":
                     # "First /Last/"  or  "/Last/"  or  "First //"
                     m = re.match(r"^(.*?)\s*/(.*)/$", value.strip())
                     if m:
-                        current["first_name"] = m.group(1).strip()
-                        current["last_name"] = m.group(2).strip()
+                        fn, ln = m.group(1).strip(), m.group(2).strip()
                     else:
-                        current["first_name"] = value.strip()
-                        current["last_name"] = ""
+                        fn, ln = value.strip(), ""
+                    # Store tentatively; _MTYPE at level 2 may reclassify as maiden
+                    current["_pending_name"] = (fn, ln)
+                    if "first_name" not in current:
+                        current["first_name"] = fn
+                        current["last_name"] = ln
+
+                elif tag_or_xref == "_MNAM":
+                    # MyHeritage alternate maiden-name tag (level 1)
+                    m = re.match(r"^(.*?)\s*/(.*)/$", value.strip())
+                    current["maiden_name"] = m.group(2).strip() if m else value.strip()
 
                 elif tag_or_xref == "SEX":
                     v = value.strip().upper()[:1]
                     if v in ("M", "F"):
                         current["sex"] = v
 
-                elif tag_or_xref in ("BIRT", "DEAT", "MARR", "DIV"):
+                elif tag_or_xref in ("BIRT", "DEAT", "MARR", "DIV", "BURI"):
                     current_event = tag_or_xref
                     current.setdefault(tag_or_xref, {})
+
+                elif tag_or_xref == "OCCU":
+                    current["occupation"] = value.strip()
 
                 elif tag_or_xref == "NOTE":
                     current["notes"] = value.strip()
@@ -124,6 +138,15 @@ def parse_gedcom(path: str) -> tuple[dict, dict]:
                     current[current_event]["date"] = value.strip()
                 elif current_event and tag_or_xref == "PLAC":
                     current[current_event]["place"] = value.strip()
+                elif tag_or_xref == "_MTYPE" and value.strip().upper() == "MAIDEN":
+                    # The most recent NAME tag was the maiden name
+                    if "_pending_name" in current:
+                        fn, ln = current["_pending_name"]
+                        current["maiden_name"] = ln or fn
+                        # If this was mistakenly set as primary name, undo it
+                        if current.get("first_name") == fn and current.get("last_name") == ln:
+                            current.pop("first_name", None)
+                            current.pop("last_name", None)
                 elif tag_or_xref == "CONT" and "notes" in current:
                     current["notes"] += "\n" + value
                 elif tag_or_xref == "CONC" and "notes" in current:
@@ -143,20 +166,27 @@ def import_to_db(individuals: dict, families: dict, conn) -> None:
         birth = person.get("BIRT", {})
         death = person.get("DEAT", {})
 
+        burial = person.get("BURI", {})
+
         cur.execute(
             """
             INSERT INTO persons
-                (gedcom_id, first_name, last_name, sex,
-                 birth_date, birth_place, death_date, death_place, notes)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                (gedcom_id, first_name, last_name, maiden_name, sex,
+                 birth_date, birth_place, death_date, death_place,
+                 burial_date, burial_place, occupation, notes)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (gedcom_id) DO UPDATE SET
                 first_name   = EXCLUDED.first_name,
                 last_name    = EXCLUDED.last_name,
+                maiden_name  = EXCLUDED.maiden_name,
                 sex          = EXCLUDED.sex,
                 birth_date   = EXCLUDED.birth_date,
                 birth_place  = EXCLUDED.birth_place,
                 death_date   = EXCLUDED.death_date,
                 death_place  = EXCLUDED.death_place,
+                burial_date  = EXCLUDED.burial_date,
+                burial_place = EXCLUDED.burial_place,
+                occupation   = EXCLUDED.occupation,
                 notes        = EXCLUDED.notes
             RETURNING id
             """,
@@ -164,11 +194,15 @@ def import_to_db(individuals: dict, families: dict, conn) -> None:
                 gedcom_id,
                 person.get("first_name") or None,
                 person.get("last_name") or None,
+                person.get("maiden_name") or None,
                 person.get("sex") or None,
                 birth.get("date") or None,
                 birth.get("place") or None,
                 death.get("date") or None,
                 death.get("place") or None,
+                burial.get("date") or None,
+                burial.get("place") or None,
+                person.get("occupation") or None,
                 person.get("notes") or None,
             ),
         )
@@ -181,16 +215,22 @@ def import_to_db(individuals: dict, families: dict, conn) -> None:
         wife_uuid = person_id_map.get(fam.get("wife_id", ""))
         marr = fam.get("MARR", {})
 
+        div = fam.get("DIV", {})
+
         cur.execute(
             """
             INSERT INTO families
-                (gedcom_id, husband_id, wife_id, marriage_date, marriage_place)
-            VALUES (%s, %s::uuid, %s::uuid, %s, %s)
+                (gedcom_id, husband_id, wife_id,
+                 marriage_date, marriage_place,
+                 divorce_date, divorce_place)
+            VALUES (%s, %s::uuid, %s::uuid, %s, %s, %s, %s)
             ON CONFLICT (gedcom_id) DO UPDATE SET
                 husband_id     = EXCLUDED.husband_id,
                 wife_id        = EXCLUDED.wife_id,
                 marriage_date  = EXCLUDED.marriage_date,
-                marriage_place = EXCLUDED.marriage_place
+                marriage_place = EXCLUDED.marriage_place,
+                divorce_date   = EXCLUDED.divorce_date,
+                divorce_place  = EXCLUDED.divorce_place
             RETURNING id
             """,
             (
@@ -199,6 +239,8 @@ def import_to_db(individuals: dict, families: dict, conn) -> None:
                 wife_uuid,
                 marr.get("date") or None,
                 marr.get("place") or None,
+                div.get("date") or None,
+                div.get("place") or None,
             ),
         )
         family_uuid = str(cur.fetchone()[0])

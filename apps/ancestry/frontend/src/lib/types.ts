@@ -9,6 +9,9 @@ export interface Person {
   birth_place: string;
   death_date: string;
   death_place: string;
+  burial_date: string;
+  burial_place: string;
+  occupation: string;
   notes: string;
 }
 
@@ -16,6 +19,8 @@ export interface FamilyView {
   spouse: Person | null;
   marriage_date: string;
   marriage_place: string;
+  divorce_date: string;
+  divorce_place: string;
   children: Person[];
 }
 

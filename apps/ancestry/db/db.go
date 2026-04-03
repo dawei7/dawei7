@@ -11,17 +11,20 @@ import (
 
 // Person holds a single person record.
 type Person struct {
-	ID         string `json:"id"`
-	GedcomID   string `json:"gedcom_id"`
-	FirstName  string `json:"first_name"`
-	LastName   string `json:"last_name"`
-	MaidenName string `json:"maiden_name"`
-	Sex        string `json:"sex"`
-	BirthDate  string `json:"birth_date"`
-	BirthPlace string `json:"birth_place"`
-	DeathDate  string `json:"death_date"`
-	DeathPlace string `json:"death_place"`
-	Notes      string `json:"notes"`
+	ID          string `json:"id"`
+	GedcomID    string `json:"gedcom_id"`
+	FirstName   string `json:"first_name"`
+	LastName    string `json:"last_name"`
+	MaidenName  string `json:"maiden_name"`
+	Sex         string `json:"sex"`
+	BirthDate   string `json:"birth_date"`
+	BirthPlace  string `json:"birth_place"`
+	DeathDate   string `json:"death_date"`
+	DeathPlace  string `json:"death_place"`
+	BurialDate  string `json:"burial_date"`
+	BurialPlace string `json:"burial_place"`
+	Occupation  string `json:"occupation"`
+	Notes       string `json:"notes"`
 }
 
 // FullName returns "First Last", falling back to whichever part is available.
@@ -41,6 +44,8 @@ type FamilyView struct {
 	Spouse        *Person  `json:"spouse"`
 	MarriageDate  string   `json:"marriage_date"`
 	MarriagePlace string   `json:"marriage_place"`
+	DivorceDate   string   `json:"divorce_date"`
+	DivorcePlace  string   `json:"divorce_place"`
 	Children      []Person `json:"children"`
 }
 
@@ -56,7 +61,8 @@ func scanPerson(s scanner) (Person, error) {
 	var p Person
 	err := s.Scan(
 		&p.ID, &p.GedcomID, &p.FirstName, &p.LastName, &p.MaidenName,
-		&p.Sex, &p.BirthDate, &p.BirthPlace, &p.DeathDate, &p.DeathPlace, &p.Notes,
+		&p.Sex, &p.BirthDate, &p.BirthPlace, &p.DeathDate, &p.DeathPlace,
+		&p.BurialDate, &p.BurialPlace, &p.Occupation, &p.Notes,
 	)
 	return p, err
 }
@@ -65,12 +71,14 @@ const personCols = `id::text,
 	COALESCE(gedcom_id,''), COALESCE(first_name,''), COALESCE(last_name,''),
 	COALESCE(maiden_name,''), COALESCE(sex,''), COALESCE(birth_date,''),
 	COALESCE(birth_place,''), COALESCE(death_date,''), COALESCE(death_place,''),
+	COALESCE(burial_date,''), COALESCE(burial_place,''), COALESCE(occupation,''),
 	COALESCE(notes,'')`
 
 const personColsP = `p.id::text,
 	COALESCE(p.gedcom_id,''), COALESCE(p.first_name,''), COALESCE(p.last_name,''),
 	COALESCE(p.maiden_name,''), COALESCE(p.sex,''), COALESCE(p.birth_date,''),
 	COALESCE(p.birth_place,''), COALESCE(p.death_date,''), COALESCE(p.death_place,''),
+	COALESCE(p.burial_date,''), COALESCE(p.burial_place,''), COALESCE(p.occupation,''),
 	COALESCE(p.notes,'')`
 
 // Connect creates a pgx connection pool from DATABASE_URL.
@@ -174,7 +182,8 @@ func GetPersonFamilies(ctx context.Context, pool *pgxpool.Pool, personID string)
 	rows, err := pool.Query(ctx,
 		`SELECT f.id::text,
 			COALESCE(f.husband_id::text,''), COALESCE(f.wife_id::text,''),
-			COALESCE(f.marriage_date,''), COALESCE(f.marriage_place,'')
+			COALESCE(f.marriage_date,''), COALESCE(f.marriage_place,''),
+			COALESCE(f.divorce_date,''), COALESCE(f.divorce_place,'')
 		 FROM families f
 		 WHERE f.husband_id = $1::uuid OR f.wife_id = $1::uuid
 		 ORDER BY f.marriage_date`, personID)
@@ -185,11 +194,11 @@ func GetPersonFamilies(ctx context.Context, pool *pgxpool.Pool, personID string)
 
 	var families []FamilyView
 	for rows.Next() {
-		var famID, husbandID, wifeID, marDate, marPlace string
-		if err := rows.Scan(&famID, &husbandID, &wifeID, &marDate, &marPlace); err != nil {
+		var famID, husbandID, wifeID, marDate, marPlace, divDate, divPlace string
+		if err := rows.Scan(&famID, &husbandID, &wifeID, &marDate, &marPlace, &divDate, &divPlace); err != nil {
 			return nil, err
 		}
-		fv := FamilyView{MarriageDate: marDate, MarriagePlace: marPlace}
+		fv := FamilyView{MarriageDate: marDate, MarriagePlace: marPlace, DivorceDate: divDate, DivorcePlace: divPlace}
 
 		spouseID := wifeID
 		if personID == wifeID {

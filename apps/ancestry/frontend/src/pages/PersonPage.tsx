@@ -75,6 +75,21 @@ export default function PersonPage() {
                 </span>
               </div>
             )}
+            {(person.burial_date || person.burial_place) && (
+              <div className="flex gap-3">
+                <span className="text-zinc-500 w-16 shrink-0">Buried</span>
+                <span>
+                  {person.burial_date}
+                  {person.burial_place && ` · ${person.burial_place}`}
+                </span>
+              </div>
+            )}
+            {person.occupation && (
+              <div className="flex gap-3">
+                <span className="text-zinc-500 w-16 shrink-0">Occupation</span>
+                <span>{person.occupation}</span>
+              </div>
+            )}
             {person.sex === 'M' && (
               <div className="flex gap-3">
                 <span className="text-zinc-500 w-16 shrink-0">Sex</span>
@@ -118,6 +133,13 @@ export default function PersonPage() {
                     Married
                     {fam.marriage_date && ` ${fam.marriage_date}`}
                     {fam.marriage_place && ` · ${fam.marriage_place}`}
+                  </p>
+                )}
+                {(fam.divorce_date || fam.divorce_place) && (
+                  <p className="text-xs text-zinc-600 mt-1 ml-1">
+                    Divorced
+                    {fam.divorce_date && ` ${fam.divorce_date}`}
+                    {fam.divorce_place && ` · ${fam.divorce_place}`}
                   </p>
                 )}
               </div>

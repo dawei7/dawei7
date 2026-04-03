@@ -40,3 +40,14 @@ CREATE TABLE IF NOT EXISTS family_children (
     person_id  UUID REFERENCES persons(id)  ON DELETE CASCADE,
     PRIMARY KEY (family_id, person_id)
 );
+
+-- ─── Migrations (idempotent — safe to re-run) ──────────────────────────────
+
+ALTER TABLE persons
+    ADD COLUMN IF NOT EXISTS burial_date  TEXT,
+    ADD COLUMN IF NOT EXISTS burial_place TEXT,
+    ADD COLUMN IF NOT EXISTS occupation   TEXT;
+
+ALTER TABLE families
+    ADD COLUMN IF NOT EXISTS divorce_date  TEXT,
+    ADD COLUMN IF NOT EXISTS divorce_place TEXT;
