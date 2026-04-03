@@ -278,10 +278,10 @@ export default function AncestorTree({ data, rootId }: Props) {
       .attr('data-src', (d) => d.source.data.id)
       .attr('data-tgt', (d) => d.target.data.id)
       .attr('d', (d) => {
-        const sx = d.source.y + NODE_W;
-        const sy = d.source.x;
-        const tx = d.target.y;
-        const ty = d.target.x;
+        const sx = d.source.y! + NODE_W;
+        const sy = d.source.x!;
+        const tx = d.target.y!;
+        const ty = d.target.x!;
         const mx = (sx + tx) / 2;
         return `M${sx},${sy} C${mx},${sy} ${mx},${ty} ${tx},${ty}`;
       })
@@ -297,7 +297,7 @@ export default function AncestorTree({ data, rootId }: Props) {
       .join('g')
       .attr('class', 'tb')
       .attr('data-person-id', (d) => d.data.id)
-      .attr('transform', (d) => `translate(${d.y},${d.x - NODE_H / 2})`)
+      .attr('transform', (d) => `translate(${d.y!},${d.x! - NODE_H / 2})`)
       .style('cursor', 'pointer')
       .on('click', (_e, d) => {
         setPending((prev) => {
@@ -478,7 +478,7 @@ function centerRoot(
 ) {
   const svgNode = svg.node()!;
   const h = svgNode.clientHeight || svgNode.getBoundingClientRect().height || 600;
-  const xs = nodes.map((n) => n.x);
+  const xs = nodes.map((n) => n.x ?? 0);
   const xCenter = (Math.min(...xs) + Math.max(...xs)) / 2;
   svg.call(zoom.transform, d3.zoomIdentity.translate(48, h / 2 - xCenter));
 }
@@ -500,7 +500,7 @@ function applyVisuals(
     const id = d.data.id;
     const inU = universe.has(id);
     const sel = d3.select(this);
-    sel.style('display', inU ? null : 'none');
+    sel.style('display', inU ? '' : 'none');
     sel.style('opacity', preview ? (preview.has(id) ? 1 : 0.08) : 1);
 
     const isPending = pending.has(id);
@@ -524,7 +524,7 @@ function applyVisuals(
   g.selectAll<SVGPathElement, d3.HierarchyLink<TreeNode>>('.tree-link').each(function (d) {
     const inU = universe.has(d.source.data.id) && universe.has(d.target.data.id);
     const el = d3.select(this);
-    el.style('display', inU ? null : 'none');
+    el.style('display', inU ? '' : 'none');
     el.style(
       'opacity',
       preview
