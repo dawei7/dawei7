@@ -119,6 +119,8 @@ services:
 
   # ─── ANCESTRY ────────────────────────────────────────────────────────────────
   ancestry:
+    build:
+      context: ./apps/ancestry
     image: ghcr.io/${GITHUB_REPOSITORY_OWNER}/ancestry:latest
     container_name: ancestry
     restart: unless-stopped

@@ -36,7 +36,7 @@ jobs:
           docker compose pull --ignore-buildable || echo "WARNING: some images failed to pull, continuing with cached versions"
 
           echo "Building local images..."
-          docker compose build socket-proxy
+          docker compose build socket-proxy ancestry
 
           echo "Restarting services..."
           docker compose up -d --remove-orphans
