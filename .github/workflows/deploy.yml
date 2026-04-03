@@ -15,7 +15,14 @@ jobs:
     environment: production
     if: github.repository_owner == 'dawei7' && github.ref == 'refs/heads/main'
 
+    permissions:
+      contents: read
+      packages: read
+
     steps:
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
       - name: Pull latest config & restart stack
         run: |
           set -e
@@ -26,7 +33,7 @@ jobs:
           git reset --hard origin/main
 
           echo "Pulling latest images..."
-          docker compose pull --ignore-buildable
+          docker compose pull --ignore-buildable || echo "WARNING: some images failed to pull, continuing with cached versions"
 
           echo "Building local images..."
           docker compose build socket-proxy
