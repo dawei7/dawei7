@@ -43,8 +43,8 @@ jobs:
           tags: |
             ${{ env.IMAGE }}:latest
             ${{ env.IMAGE }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=ancestry
+          cache-to: type=gha,mode=max,scope=ancestry
 
   deploy:
     name: Deploy on VPS
