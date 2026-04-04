@@ -49,6 +49,22 @@ func main() {
 
 	// ── JSON API ──────────────────────────────────────────────────────────────
 
+	// Default root person (gedcom_id I500001 = David Schmid, fallback to first person)
+	mux.HandleFunc("GET /api/default-root", func(w http.ResponseWriter, r *http.Request) {
+		var id string
+		err := pool.QueryRow(r.Context(),
+			`SELECT id::text FROM persons WHERE gedcom_id = 'I500001' LIMIT 1`).Scan(&id)
+		if err != nil {
+			err = pool.QueryRow(r.Context(),
+				`SELECT id::text FROM persons ORDER BY last_name, first_name LIMIT 1`).Scan(&id)
+			if err != nil {
+				jsonError(w, "no persons found", http.StatusNotFound)
+				return
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]string{"id": id})
+	})
+
 	// People list (search + pagination) → JSON
 	mux.HandleFunc("GET /api/people", func(w http.ResponseWriter, r *http.Request) {
 		search := r.URL.Query().Get("q")
