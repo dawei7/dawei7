@@ -42,6 +42,7 @@ export interface TreeNode {
   name: string;
   dates?: string;
   sex?: string;
+  has_siblings?: boolean;
   /** Genealogical parents — "children" in D3 hierarchy terms */
   children?: TreeNode[];
 }

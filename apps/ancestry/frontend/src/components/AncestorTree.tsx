@@ -1,126 +1,81 @@
 /**
  * AncestorTree — D3 v7 pedigree tree as a React component.
  *
- * Patterns used:
- *  - React owns all logical state (collapse map, pending selection, filter).
- *  - D3 owns SVG pixels: rendering runs inside useEffect with a stable containerRef.
- *  - Zoom/pan transform is preserved in a ref so re-renders don't jump the viewport.
- *  - Filter state is persisted to sessionStorage keyed by person ID.
+ * - Ancestor direction: always 3 generations visible (collapsible beyond that).
+ * - Each node has an OPEN vertical tab to navigate to the person page.
+ * - Each node has a siblings button that expands a sibling panel below the tree.
+ * - No selection/filter system.
  */
 import { useRef, useState, useEffect, useCallback } from 'react';
 import * as d3 from 'd3';
-import type { TreeNode } from '../lib/types';
+import type { TreeNode, Person } from '../lib/types';
+import { fetchSiblings } from '../lib/api';
 
 // ── Layout constants ─────────────────────────────────────────────────────────
-const NODE_W = 200;
-const NODE_H = 56;
-const GAP_X = 72;
-const GAP_Y = 14;
+const NODE_W = 220;
+const NODE_H = 72;
+const TAB_W = 32;
+const GAP_X = 80;
+const GAP_Y = 10;
 const DEFAULT_COLLAPSE_DEPTH = 3;
+
+// Sex colours
+const SEX_FILL: Record<string, string> = {
+  M: '#0f1e38',
+  F: '#1e0f2a',
+  '': '#18181b',
+};
+const SEX_STRIPE: Record<string, string> = {
+  M: '#1d4ed8',
+  F: '#9333ea',
+  '': '#3f3f46',
+};
 
 // ── Types ────────────────────────────────────────────────────────────────────
 type HierarchyNode = d3.HierarchyNode<TreeNode> & {
   _allChildren?: HierarchyNode[];
 };
 
-interface FilterState {
-  activeFilter: Set<string> | null;
-  filterHistory: Array<Set<string> | null>;
-}
-
-function loadFilterState(storeKey: string): FilterState {
-  try {
-    const raw = sessionStorage.getItem(storeKey);
-    if (!raw) return { activeFilter: null, filterHistory: [] };
-    const s = JSON.parse(raw) as {
-      f: string[] | null;
-      h: Array<string[] | null>;
-    };
-    return {
-      activeFilter: s.f ? new Set(s.f) : null,
-      filterHistory: (s.h ?? []).map((a) => (a ? new Set(a) : null)),
-    };
-  } catch {
-    return { activeFilter: null, filterHistory: [] };
-  }
-}
-
-function saveFilterState(storeKey: string, state: FilterState) {
-  try {
-    sessionStorage.setItem(
-      storeKey,
-      JSON.stringify({
-        f: state.activeFilter ? [...state.activeFilter] : null,
-        h: state.filterHistory.map((s) => (s ? [...s] : null)),
-      }),
-    );
-  } catch {
-    // sessionStorage may be unavailable
-  }
-}
-
-// ── Ancestor reachability ────────────────────────────────────────────────────
-function computeReachable(
-  seeds: Set<string>,
-  universe: Set<string>,
-  links: Array<d3.HierarchyLink<TreeNode>>,
-): Set<string> {
-  const bySrc: Record<string, string[]> = {};
-  const byTgt: Record<string, string[]> = {};
-  for (const l of links) {
-    const s = l.source.data.id;
-    const t = l.target.data.id;
-    (bySrc[s] ??= []).push(t);
-    (byTgt[t] ??= []).push(s);
-  }
-  const visible = new Set<string>();
-  for (const selID of seeds) {
-    if (!universe.has(selID)) continue;
-    // Expand descendants (ancestors in tree terms)
-    const q = [selID];
-    while (q.length) {
-      const cur = q.shift()!;
-      if (visible.has(cur)) continue;
-      visible.add(cur);
-      for (const tgt of bySrc[cur] ?? []) {
-        if (!visible.has(tgt) && universe.has(tgt)) q.push(tgt);
-      }
-    }
-    // Walk up to root
-    let cur = selID;
-    for (;;) {
-      const srcs = byTgt[cur];
-      if (!srcs?.length) break;
-      const src = srcs[0];
-      if (!universe.has(src)) break;
-      visible.add(src);
-      cur = src;
-    }
-  }
-  return visible;
+interface SiblingPanel {
+  personId: string;
+  name: string;
+  siblings: Person[];
+  loading: boolean;
+  error: string | null;
 }
 
 // ── Component ────────────────────────────────────────────────────────────────
 interface Props {
   data: TreeNode;
   rootId: string;
+  descendants?: TreeNode;
 }
 
-export default function AncestorTree({ data, rootId }: Props) {
+export default function AncestorTree({ data, rootId, descendants }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // D3 mutable refs — not React state, so they don't trigger re-renders
   const svgRef = useRef<d3.Selection<SVGSVGElement, unknown, null, undefined> | null>(null);
   const gRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const transformRef = useRef<d3.ZoomTransform | null>(null);
   const hierarchyRef = useRef<HierarchyNode | null>(null);
-  const allNodesMapRef = useRef<Map<string, HierarchyNode>>(new Map());
+  const rootIdRef = useRef(rootId);
+  useEffect(() => { rootIdRef.current = rootId; }, [rootId]);
 
-  // Collapse map: node ID → true means collapsed.
-  // We store collapse state separately so D3 hierarchy can be rebuilt cleanly.
+  // Reset SVG when the root person changes (new tree page)
+  const prevRootIdRef = useRef(rootId);
+  if (prevRootIdRef.current !== rootId) {
+    prevRootIdRef.current = rootId;
+    if (svgRef.current && containerRef.current) {
+      containerRef.current.innerHTML = '';
+    }
+    svgRef.current = null;
+    gRef.current = null;
+    zoomRef.current = null;
+    transformRef.current = null;
+  }
+
   const [collapseMap, setCollapseMap] = useState<ReadonlySet<string>>(() => {
-    // Nodes at depth >= DEFAULT_COLLAPSE_DEPTH start collapsed
     const m = new Set<string>();
     function walk(node: TreeNode, depth: number) {
       if (depth >= DEFAULT_COLLAPSE_DEPTH && node.children?.length) m.add(node.id);
@@ -130,53 +85,34 @@ export default function AncestorTree({ data, rootId }: Props) {
     return m;
   });
 
-  // Filter / selection state
-  const storeKey = `tree-d3-${rootId}`;
-  const [filterState, setFilterState] = useState<FilterState>(() =>
-    loadFilterState(storeKey),
-  );
-  const [pending, setPending] = useState<Set<string>>(new Set());
+  const [siblingPanel, setSiblingPanel] = useState<SiblingPanel | null>(null);
 
-  // Persist filter state on change
+  // Descendant collapse map (depth ≥ DEFAULT_COLLAPSE_DEPTH collapsed)
+  const [descCollapseMap, setDescCollapseMap] = useState<ReadonlySet<string>>(new Set());
   useEffect(() => {
-    saveFilterState(storeKey, filterState);
-  }, [storeKey, filterState]);
+    if (!descendants) return;
+    const m = new Set<string>();
+    function walkDesc(node: TreeNode, depth: number) {
+      if (depth >= DEFAULT_COLLAPSE_DEPTH && node.children?.length) m.add(node.id);
+      for (const child of node.children ?? []) walkDesc(child, depth + 1);
+    }
+    walkDesc(descendants, 0);
+    setDescCollapseMap(m);
+  }, [descendants]);
 
-  // ── Build D3 hierarchy from data + collapseMap ──────────────────────────
   const buildHierarchy = useCallback(() => {
     const hier = d3.hierarchy<TreeNode>(data, (d) => d.children ?? []) as HierarchyNode;
     const allNodes = hier.descendants() as HierarchyNode[];
-
-    // Back up all children before collapsing
     for (const node of allNodes) {
-      if (node.children?.length) {
-        node._allChildren = [...node.children] as HierarchyNode[];
-      }
+      if (node.children?.length) node._allChildren = [...node.children] as HierarchyNode[];
     }
-    // Apply collapse state
     for (const node of allNodes) {
-      if (collapseMap.has(node.data.id) && node._allChildren) {
-        node.children = undefined;
-      }
+      if (collapseMap.has(node.data.id) && node._allChildren) node.children = undefined;
     }
-
-    const map = new Map<string, HierarchyNode>();
-    for (const node of hier.descendants() as HierarchyNode[]) {
-      map.set(node.data.id, node);
-    }
-    // Restore map entries for collapsed branches too
-    function indexAll(n: HierarchyNode) {
-      map.set(n.data.id, n);
-      for (const c of n._allChildren ?? []) indexAll(c as HierarchyNode);
-    }
-    indexAll(hier);
-
     hierarchyRef.current = hier;
-    allNodesMapRef.current = map;
     return hier;
   }, [data, collapseMap]);
 
-  // ── Toggle collapse on a node ───────────────────────────────────────────
   const toggleNode = useCallback((nodeId: string) => {
     setCollapseMap((prev) => {
       const next = new Set(prev);
@@ -184,50 +120,44 @@ export default function AncestorTree({ data, rootId }: Props) {
       else next.add(nodeId);
       return next;
     });
-    setPending(new Set()); // clear pending on structural change
   }, []);
 
-  // ── Filter actions ──────────────────────────────────────────────────────
-  const applySelection = useCallback(() => {
-    if (!pending.size) return;
-    setFilterState((prev) => {
-      const allIds = new Set(
-        (hierarchyRef.current?.descendants() ?? []).map((n) => n.data.id),
-      );
-      const links = hierarchyRef.current?.links() ?? [];
-      const universe = prev.activeFilter
-        ? new Set([...prev.activeFilter].filter((id) => allIds.has(id)))
-        : allIds;
-      const next = computeReachable(pending, universe, links);
-      return { activeFilter: next, filterHistory: [...prev.filterHistory, prev.activeFilter] };
+  const toggleDescNode = useCallback((nodeId: string) => {
+    setDescCollapseMap((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) next.delete(nodeId);
+      else next.add(nodeId);
+      return next;
     });
-    setPending(new Set());
-  }, [pending]);
+  }, []);
 
-  const stepBack = useCallback(() => {
-    setFilterState((prev) => {
-      const history = [...prev.filterHistory];
-      const restored = history.pop() ?? null;
-      return { activeFilter: restored, filterHistory: history };
+  const openSiblings = useCallback((personId: string, name: string) => {
+    setSiblingPanel((prev) => {
+      if (prev?.personId === personId) return null;
+      return { personId, name, siblings: [], loading: true, error: null };
     });
-    setPending(new Set());
+    fetchSiblings(personId)
+      .then((siblings) => {
+        setSiblingPanel((prev) =>
+          prev?.personId === personId ? { ...prev, siblings, loading: false } : prev,
+        );
+      })
+      .catch((err: unknown) => {
+        setSiblingPanel((prev) =>
+          prev?.personId === personId
+            ? { ...prev, loading: false, error: err instanceof Error ? err.message : 'Failed' }
+            : prev,
+        );
+      });
   }, []);
 
-  const clearFilter = useCallback(() => {
-    setFilterState({ activeFilter: null, filterHistory: [] });
-    setPending(new Set());
-  }, []);
-
-  // ── D3 render ───────────────────────────────────────────────────────────
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    // Init SVG once
     if (!svgRef.current) {
       const top = container.getBoundingClientRect().top;
       const h = Math.max(400, window.innerHeight - top - 80);
-
       svgRef.current = d3
         .select(container)
         .append('svg')
@@ -240,28 +170,17 @@ export default function AncestorTree({ data, rootId }: Props) {
         .on('zoom', (e: d3.D3ZoomEvent<SVGSVGElement, unknown>) => {
           gRef.current?.attr('transform', e.transform.toString());
         });
-
       zoomRef.current = zoom;
       svgRef.current.call(zoom);
-      gRef.current = svgRef.current.append('g') as d3.Selection<
-        SVGGElement,
-        unknown,
-        null,
-        undefined
-      >;
+      gRef.current = svgRef.current.append('g') as d3.Selection<SVGGElement, unknown, null, undefined>;
     }
 
     const svg = svgRef.current;
     const g = gRef.current!;
     const zoom = zoomRef.current!;
 
-    // Save current transform before re-render
-    const svgNode = svg.node()!;
-    const currentTransform = d3.zoomTransform(svgNode);
-    const hadNodes = !g.selectAll('.tb').empty();
-    if (hadNodes) transformRef.current = currentTransform;
+    if (!g.selectAll('.tb').empty()) transformRef.current = d3.zoomTransform(svg.node()!);
 
-    // Rebuild hierarchy
     const hier = buildHierarchy();
     g.selectAll('*').remove();
     d3.tree<TreeNode>().nodeSize([NODE_H + GAP_Y, NODE_W + GAP_X])(hier);
@@ -269,14 +188,157 @@ export default function AncestorTree({ data, rootId }: Props) {
     const nodes = hier.descendants() as HierarchyNode[];
     const links = hier.links();
 
-    // ── Links ──────────────────────────────────────────────────────────────
+    // -- Descendant tree (LEFT side, mirrored) --
+    if (descendants) {
+      const descHier = d3.hierarchy<TreeNode>(descendants, (d) => d.children ?? []) as HierarchyNode;
+      const descAll = descHier.descendants() as HierarchyNode[];
+      for (const n of descAll) {
+        if (n.children?.length) n._allChildren = [...n.children] as HierarchyNode[];
+      }
+      for (const n of descAll) {
+        if (descCollapseMap.has(n.data.id) && n._allChildren) n.children = undefined;
+      }
+      d3.tree<TreeNode>().nodeSize([NODE_H + GAP_Y, NODE_W + GAP_X])(descHier);
+
+      // Links: mirror horizontally (parent left-edge → child right-edge, going left)
+      g.append('g')
+        .selectAll('path')
+        .data(descHier.links())
+        .join('path')
+        .attr('fill', 'none').attr('stroke', '#3f3f46').attr('stroke-width', 1.5)
+        .attr('d', (d) => {
+          const sx = -d.source.y!;
+          const sy = d.source.x!;
+          const tx = -d.target.y! + NODE_W;
+          const ty = d.target.x!;
+          const mx = (sx + tx) / 2;
+          return `M${sx},${sy} C${mx},${sy} ${mx},${ty} ${tx},${ty}`;
+        });
+
+      // Descendant nodes (skip depth=0 = root, already shown as ancestor root)
+      const descNodes = (descHier.descendants() as HierarchyNode[]).filter((d) => d.depth > 0);
+      const descNodeG = g
+        .append('g')
+        .selectAll<SVGGElement, HierarchyNode>('g')
+        .data(descNodes)
+        .join('g')
+        .attr('class', 'dsc')
+        .attr('data-person-id', (d) => d.data.id)
+        .attr('transform', (d) => `translate(${-d.y!},${d.x! - NODE_H / 2})`);
+
+      descNodeG.append('rect')
+        .attr('width', NODE_W).attr('height', NODE_H).attr('rx', 6)
+        .attr('fill', (d) => SEX_FILL[d.data.sex ?? ''] ?? SEX_FILL[''])
+        .attr('stroke', (d) => (d.data.id === rootIdRef.current ? '#ca8a04' : '#52525b'))
+        .attr('stroke-width', (d) => (d.data.id === rootIdRef.current ? 2 : 1.5));
+
+      descNodeG.append('rect')
+        .attr('width', 3).attr('height', NODE_H - 12)
+        .attr('x', 0).attr('y', 6).attr('rx', 1.5)
+        .attr('fill', (d) => SEX_STRIPE[d.data.sex ?? ''] ?? SEX_STRIPE[''])
+        .attr('pointer-events', 'none');
+
+      descNodeG.append('text')
+        .attr('x', 10).attr('y', 22).attr('fill', '#e4e4e7')
+        .attr('font-size', 13).attr('font-weight', 500)
+        .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
+        .attr('pointer-events', 'none').text((d) => clip(d.data.name, 18));
+
+      descNodeG.filter((d) => !!d.data.dates).append('text')
+        .attr('x', 10).attr('y', 40).attr('fill', '#71717a').attr('font-size', 11)
+        .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
+        .attr('pointer-events', 'none').text((d) => d.data.dates ?? '');
+
+      // OPEN tab - right side
+      const descNavG = descNodeG.append('g')
+        .attr('transform', `translate(${NODE_W - TAB_W}, 0)`)
+        .style('cursor', 'pointer')
+        .on('click', (e, d) => { e.stopPropagation(); window.location.href = `/person/${d.data.id}`; })
+        .on('mouseenter', function () {
+          d3.select(this).select('.dnav-bg').attr('fill', '#5b21b6');
+          d3.select(this).select('.dnav-lbl').attr('fill', '#ffffff');
+        })
+        .on('mouseleave', function () {
+          d3.select(this).select('.dnav-bg').attr('fill', '#27272a');
+          d3.select(this).select('.dnav-lbl').attr('fill', '#a78bfa');
+        });
+      descNavG.append('rect').attr('class', 'dnav-bg')
+        .attr('x', 1).attr('y', 1).attr('width', TAB_W - 2).attr('height', NODE_H - 2)
+        .attr('rx', 5).attr('fill', '#27272a');
+      descNavG.append('text').attr('class', 'dnav-lbl')
+        .attr('transform', `translate(${TAB_W / 2},${NODE_H / 2}) rotate(-90)`)
+        .attr('text-anchor', 'middle').attr('dominant-baseline', 'middle')
+        .attr('fill', '#a78bfa').attr('font-size', 11).attr('font-weight', 700)
+        .attr('letter-spacing', '0.18em')
+        .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
+        .attr('pointer-events', 'none').text('OPEN');
+
+      const dBtnY = NODE_H - 15;
+      const dBtnH = 13;
+
+      const dSibG = descNodeG.append('g').attr('transform', `translate(8,${dBtnY})`)
+        .style('cursor', 'pointer')
+        .on('click', (e, d) => { e.stopPropagation(); openSiblings(d.data.id, d.data.name); })
+        .on('mouseenter', function () {
+          d3.select(this).select('.dsib-bg').attr('fill', '#3b0764');
+          d3.select(this).select('.dsib-lbl').attr('fill', '#e9d5ff');
+        })
+        .on('mouseleave', function () {
+          d3.select(this).select('.dsib-bg').attr('fill', '#27272a');
+          d3.select(this).select('.dsib-lbl').attr('fill', '#71717a');
+        });
+      dSibG.append('rect').attr('class', 'dsib-bg')
+        .attr('width', 62).attr('height', dBtnH).attr('rx', 3)
+        .attr('fill', (d) => d.data.has_siblings ? '#2e1065' : '#27272a');
+      dSibG.append('text').attr('class', 'dsib-lbl')
+        .attr('x', 31).attr('y', 10).attr('text-anchor', 'middle')
+        .attr('fill', (d) => d.data.has_siblings ? '#a78bfa' : '#71717a')
+        .attr('font-size', 9).attr('font-weight', 600).attr('letter-spacing', '0.06em')
+        .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
+        .attr('pointer-events', 'none').text('≡  SIBLINGS');
+
+      const dRootG = descNodeG.append('g').attr('transform', `translate(76,${dBtnY})`)
+        .style('cursor', 'pointer')
+        .on('click', (e, d) => { e.stopPropagation(); window.location.href = `/tree/${d.data.id}`; })
+        .on('mouseenter', function (_, d) {
+          if (d.data.id === rootIdRef.current) return;
+          d3.select(this).select('.dr-bg').attr('fill', '#14532d');
+          d3.select(this).select('.dr-lbl').attr('fill', '#bbf7d0');
+        })
+        .on('mouseleave', function (_, d) {
+          const isRoot = d.data.id === rootIdRef.current;
+          d3.select(this).select('.dr-bg').attr('fill', isRoot ? '#166534' : '#27272a');
+          d3.select(this).select('.dr-lbl').attr('fill', isRoot ? '#86efac' : '#71717a');
+        });
+      dRootG.append('rect').attr('class', 'dr-bg')
+        .attr('width', 52).attr('height', dBtnH).attr('rx', 3)
+        .attr('fill', (d) => (d.data.id === rootIdRef.current ? '#166534' : '#27272a'));
+      dRootG.append('text').attr('class', 'dr-lbl')
+        .attr('x', 26).attr('y', 10).attr('text-anchor', 'middle')
+        .attr('fill', (d) => (d.data.id === rootIdRef.current ? '#86efac' : '#71717a'))
+        .attr('font-size', 9).attr('font-weight', 600).attr('letter-spacing', '0.06em')
+        .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
+        .attr('pointer-events', 'none')
+        .text((d) => (d.data.id === rootIdRef.current ? '⌂ ROOT' : '⌂ SET ROOT'));
+
+      const hasDescChildren = descNodeG.filter((d) => !!(d as HierarchyNode)._allChildren);
+      const descToggleG = hasDescChildren.append('g')
+        .attr('transform', `translate(-17,${NODE_H / 2})`)
+        .style('cursor', 'pointer')
+        .on('click', (e, d) => { e.stopPropagation(); toggleDescNode(d.data.id); });
+      descToggleG.append('circle').attr('r', 9).attr('fill', '#27272a')
+        .attr('stroke', (d) => (d.children ? '#71717a' : '#7c3aed')).attr('stroke-width', 1.5);
+      descToggleG.append('text').attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
+        .attr('fill', (d) => (d.children ? '#a1a1aa' : '#a78bfa')).attr('font-size', 16)
+        .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
+        .attr('pointer-events', 'none').text((d) => (d.children ? '−' : '+'));
+    }
+    // -- End descendant tree --
     g.append('g')
       .selectAll('path')
       .data(links)
       .join('path')
       .attr('class', 'tree-link')
-      .attr('data-src', (d) => d.source.data.id)
-      .attr('data-tgt', (d) => d.target.data.id)
       .attr('d', (d) => {
         const sx = d.source.y! + NODE_W;
         const sy = d.source.x!;
@@ -289,7 +351,7 @@ export default function AncestorTree({ data, rootId }: Props) {
       .attr('stroke', '#3f3f46')
       .attr('stroke-width', 1.5);
 
-    // ── Node groups ────────────────────────────────────────────────────────
+    // Node groups
     const nodeG = g
       .append('g')
       .selectAll<SVGGElement, HierarchyNode>('g')
@@ -297,34 +359,32 @@ export default function AncestorTree({ data, rootId }: Props) {
       .join('g')
       .attr('class', 'tb')
       .attr('data-person-id', (d) => d.data.id)
-      .attr('transform', (d) => `translate(${d.y!},${d.x! - NODE_H / 2})`)
-      .style('cursor', 'pointer')
-      .on('click', (_e, d) => {
-        setPending((prev) => {
-          const next = new Set(prev);
-          if (next.has(d.data.id)) next.delete(d.data.id);
-          else next.add(d.data.id);
-          return next;
-        });
-      });
+      .attr('transform', (d) => `translate(${d.y!},${d.x! - NODE_H / 2})`);
 
     // Box
     nodeG
       .append('rect')
-      .attr('class', 'node-rect')
       .attr('width', NODE_W)
       .attr('height', NODE_H)
       .attr('rx', 6)
-      .attr('fill', (d) =>
-        d.data.sex === 'M' ? '#1a1f35' : d.data.sex === 'F' ? '#201a2d' : '#18181b',
-      )
+      .attr('fill', (d) => SEX_FILL[d.data.sex ?? ''] ?? SEX_FILL[''])
       .attr('stroke', '#52525b')
       .attr('stroke-width', 1.5);
+
+    // Left sex-stripe
+    nodeG
+      .append('rect')
+      .attr('width', 3)
+      .attr('height', NODE_H - 12)
+      .attr('x', 0)
+      .attr('y', 6)
+      .attr('rx', 1.5)
+      .attr('fill', (d) => SEX_STRIPE[d.data.sex ?? ''] ?? SEX_STRIPE[''])
+      .attr('pointer-events', 'none');
 
     // Name
     nodeG
       .append('text')
-      .attr('class', 'node-name')
       .attr('x', 10)
       .attr('y', 22)
       .attr('fill', '#e4e4e7')
@@ -332,13 +392,12 @@ export default function AncestorTree({ data, rootId }: Props) {
       .attr('font-weight', 500)
       .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
       .attr('pointer-events', 'none')
-      .text((d) => clip(d.data.name, 23));
+      .text((d) => clip(d.data.name, 18));
 
     // Dates
     nodeG
       .filter((d) => !!d.data.dates)
       .append('text')
-      .attr('class', 'node-dates')
       .attr('x', 10)
       .attr('y', 40)
       .attr('fill', '#71717a')
@@ -347,35 +406,152 @@ export default function AncestorTree({ data, rootId }: Props) {
       .attr('pointer-events', 'none')
       .text((d) => d.data.dates ?? '');
 
-    // Navigate icon ↗
-    nodeG
-      .append('text')
-      .attr('class', 'nav-icon')
-      .attr('x', NODE_W - 18)
-      .attr('y', 17)
-      .attr('fill', '#52525b')
-      .attr('font-size', 14)
-      .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
+    // ── Bottom button row (y = NODE_H - 15) ─────────────────────────────
+    const BTN_Y = NODE_H - 15;
+    const BTN_H2 = 13;
+
+    // Siblings button — small pill at bottom-left
+    const sibG = nodeG
+      .append('g')
+      .attr('class', (d) =>
+        siblingPanel?.personId === d.data.id ? 'sib-btn sib-active' : 'sib-btn',
+      )
+      .attr('transform', `translate(8,${BTN_Y})`)
       .style('cursor', 'pointer')
-      .attr('pointer-events', 'all')
-      .text('↗')
+      .on('click', (e, d) => {
+        e.stopPropagation();
+        openSiblings(d.data.id, d.data.name);
+      })
+      .on('mouseenter', function () {
+        d3.select(this).select('.sib-bg').attr('fill', '#3b0764');
+        d3.select(this).select('.sib-lbl').attr('fill', '#e9d5ff');
+      })
+      .on('mouseleave', function (_, d) {
+        const isActive = siblingPanel?.personId === d.data.id;
+        const hasSib = d.data.has_siblings;
+        d3.select(this).select('.sib-bg').attr('fill', isActive ? '#4c1d95' : hasSib ? '#2e1065' : '#27272a');
+        d3.select(this).select('.sib-lbl').attr('fill', isActive ? '#ddd6fe' : hasSib ? '#a78bfa' : '#71717a');
+      });
+
+    sibG
+      .append('rect')
+      .attr('class', 'sib-bg')
+      .attr('width', 62)
+      .attr('height', 13)
+      .attr('rx', 3)
+      .attr('fill', (d) => (siblingPanel?.personId === d.data.id ? '#4c1d95' : d.data.has_siblings ? '#2e1065' : '#27272a'));
+
+    sibG
+      .append('text')
+      .attr('class', 'sib-lbl')
+      .attr('x', 31)
+      .attr('y', 10)
+      .attr('text-anchor', 'middle')
+      .attr('fill', (d) => (siblingPanel?.personId === d.data.id ? '#ddd6fe' : d.data.has_siblings ? '#a78bfa' : '#71717a'))
+      .attr('font-size', 9)
+      .attr('font-weight', 600)
+      .attr('letter-spacing', '0.06em')
+      .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
+      .attr('pointer-events', 'none')
+      .text('≡  SIBLINGS');
+
+    // "Set as root" button — pill to the right of siblings
+    const rootBtnW = 52;
+    const rootBtnX = 76;
+    const rootG = nodeG
+      .append('g')
+      .attr('class', 'root-btn')
+      .attr('transform', `translate(${rootBtnX},${BTN_Y})`)
+      .style('cursor', 'pointer')
+      .on('click', (e, d) => {
+        e.stopPropagation();
+        window.location.href = `/tree/${d.data.id}`;
+      })
+      .on('mouseenter', function (_, d) {
+        if (d.data.id === rootIdRef.current) return;
+        d3.select(this).select('.root-bg').attr('fill', '#14532d');
+        d3.select(this).select('.root-lbl').attr('fill', '#bbf7d0');
+      })
+      .on('mouseleave', function (_, d) {
+        const isRoot = d.data.id === rootIdRef.current;
+        d3.select(this).select('.root-bg').attr('fill', isRoot ? '#166534' : '#27272a');
+        d3.select(this).select('.root-lbl').attr('fill', isRoot ? '#86efac' : '#71717a');
+      });
+
+    rootG
+      .append('rect')
+      .attr('class', 'root-bg')
+      .attr('width', rootBtnW)
+      .attr('height', BTN_H2)
+      .attr('rx', 3)
+      .attr('fill', (d) => (d.data.id === rootIdRef.current ? '#166534' : '#27272a'));
+
+    rootG
+      .append('text')
+      .attr('class', 'root-lbl')
+      .attr('x', rootBtnW / 2)
+      .attr('y', 10)
+      .attr('text-anchor', 'middle')
+      .attr('fill', (d) => (d.data.id === rootIdRef.current ? '#86efac' : '#71717a'))
+      .attr('font-size', 9)
+      .attr('font-weight', 600)
+      .attr('letter-spacing', '0.06em')
+      .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
+      .attr('pointer-events', 'none')
+      .text((d) => (d.data.id === rootIdRef.current ? '⌂ ROOT' : '⌂ SET ROOT'));
+
+    // Highlight current root node with a golden border
+    nodeG
+      .filter((d) => d.data.id === rootIdRef.current)
+      .select('rect')
+      .attr('stroke', '#ca8a04')
+      .attr('stroke-width', 2);
+
+    // Right-side vertical "OPEN" tab
+    const navG = nodeG
+      .append('g')
+      .attr('transform', `translate(${NODE_W - TAB_W}, 0)`)
+      .style('cursor', 'pointer')
       .on('click', (e, d) => {
         e.stopPropagation();
         window.location.href = `/person/${d.data.id}`;
       })
       .on('mouseenter', function () {
-        d3.select(this).attr('fill', '#a78bfa');
+        d3.select(this).select('.nav-bg').attr('fill', '#5b21b6');
+        d3.select(this).select('.nav-lbl').attr('fill', '#ffffff');
       })
       .on('mouseleave', function () {
-        d3.select(this).attr('fill', '#52525b');
+        d3.select(this).select('.nav-bg').attr('fill', '#27272a');
+        d3.select(this).select('.nav-lbl').attr('fill', '#a78bfa');
       });
 
-    // Expand/collapse toggle for nodes with ancestors
-    const hasAncestors = nodeG.filter((d) => !!(d as HierarchyNode)._allChildren);
+    navG
+      .append('rect')
+      .attr('class', 'nav-bg')
+      .attr('x', 1).attr('y', 1)
+      .attr('width', TAB_W - 2)
+      .attr('height', NODE_H - 2)
+      .attr('rx', 5)
+      .attr('fill', '#27272a');
 
+    navG
+      .append('text')
+      .attr('class', 'nav-lbl')
+      .attr('transform', `translate(${TAB_W / 2},${NODE_H / 2}) rotate(-90)`)
+      .attr('text-anchor', 'middle')
+      .attr('dominant-baseline', 'middle')
+      .attr('fill', '#a78bfa')
+      .attr('font-size', 11)
+      .attr('font-weight', 700)
+      .attr('letter-spacing', '0.18em')
+      .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
+      .attr('pointer-events', 'none')
+      .text('OPEN');
+
+    // Expand/collapse toggle
+    const hasAncestors = nodeG.filter((d) => !!(d as HierarchyNode)._allChildren);
     const toggleG = hasAncestors
       .append('g')
-      .attr('class', 'toggle-btn')
       .attr('transform', `translate(${NODE_W + 8},${NODE_H / 2})`)
       .style('cursor', 'pointer')
       .on('click', (e, d) => {
@@ -385,7 +561,6 @@ export default function AncestorTree({ data, rootId }: Props) {
 
     toggleG
       .append('circle')
-      .attr('class', 'toggle-circle')
       .attr('r', 9)
       .attr('fill', '#27272a')
       .attr('stroke', (d) => (d.children ? '#71717a' : '#7c3aed'))
@@ -393,7 +568,6 @@ export default function AncestorTree({ data, rootId }: Props) {
 
     toggleG
       .append('text')
-      .attr('class', 'toggle-symbol')
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'central')
       .attr('fill', (d) => (d.children ? '#a1a1aa' : '#a78bfa'))
@@ -402,64 +576,93 @@ export default function AncestorTree({ data, rootId }: Props) {
       .attr('pointer-events', 'none')
       .text((d) => (d.children ? '−' : '+'));
 
-    // Restore or center
     if (transformRef.current) {
       svg.call(zoom.transform, transformRef.current);
     } else {
-      centerRoot(svg, zoom, nodes);
+      centerRoot(svg, zoom, nodes, !!descendants);
     }
-
-    // Apply filter visuals
-    applyVisuals(g, nodes, links, pending, filterState.activeFilter);
-
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, collapseMap, buildHierarchy, toggleNode]);
+  }, [data, collapseMap, buildHierarchy, toggleNode, descendants, descCollapseMap, toggleDescNode]);
 
-  // Separate lighter effect for visual-only updates (pending/filter changes)
+  // Sync siblings button highlight when panel changes
   useEffect(() => {
     const g = gRef.current;
-    const hier = hierarchyRef.current;
-    if (!g || !hier) return;
-    const nodes = hier.descendants() as HierarchyNode[];
-    const links = hier.links();
-    applyVisuals(g, nodes, links, pending, filterState.activeFilter);
-  }, [pending, filterState]);
-
-  const showBar = pending.size > 0 || filterState.filterHistory.length > 0 || filterState.activeFilter !== null;
+    if (!g) return;
+    g.selectAll<SVGGElement, HierarchyNode>('.tb').each(function (d) {
+      const active = siblingPanel?.personId === d.data.id;
+      d3.select(this).select('.sib-bg').attr('fill', active ? '#4c1d95' : '#27272a');
+      d3.select(this).select('.sib-lbl').attr('fill', active ? '#ddd6fe' : '#71717a');
+    });
+  }, [siblingPanel]);
 
   return (
-    <>
+    <div>
       <div ref={containerRef} className="w-full" />
 
-      {showBar && (
-        <div className="fixed bottom-0 left-0 right-0 bg-zinc-900/95 backdrop-blur border-t border-zinc-800 px-6 py-3 flex items-center gap-3">
-          <span className="text-sm text-zinc-400 mr-auto">
-            {pending.size > 0 ? `${pending.size} selected` : ''}
-          </span>
-          <button
-            onClick={applySelection}
-            disabled={pending.size === 0}
-            className="text-xs px-3 py-1.5 rounded-lg border border-violet-700 text-violet-300 hover:border-violet-400 hover:text-violet-100 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            Apply selection
-          </button>
-          <button
-            onClick={stepBack}
-            disabled={filterState.filterHistory.length === 0}
-            className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-zinc-200 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            ← Step back
-          </button>
-          <button
-            onClick={clearFilter}
-            disabled={filterState.filterHistory.length === 0 && pending.size === 0 && filterState.activeFilter === null}
-            className="text-xs px-3 py-1.5 rounded-lg border border-zinc-700 text-zinc-400 hover:border-red-500 hover:text-red-400 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            Clear all
-          </button>
+      {siblingPanel && (
+        <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-zinc-700 bg-zinc-950/98 shadow-2xl">
+          {/* Header bar */}
+          <div className="flex items-center justify-between px-6 py-3 border-b border-zinc-800">
+            <h3 className="text-sm font-semibold text-zinc-200">
+              Siblings of <span className="text-violet-300">{siblingPanel.name}</span>
+            </h3>
+            <button
+              onClick={() => setSiblingPanel(null)}
+              className="text-zinc-500 hover:text-zinc-200 text-xl leading-none px-1"
+            >
+              ×
+            </button>
+          </div>
+
+          {/* Scrollable content */}
+          <div className="overflow-y-auto max-h-[38vh] px-6 py-4">
+            {siblingPanel.loading && <p className="text-zinc-500 text-sm">Loading…</p>}
+            {siblingPanel.error && <p className="text-red-400 text-sm">{siblingPanel.error}</p>}
+            {!siblingPanel.loading && !siblingPanel.error && siblingPanel.siblings.length === 0 && (
+              <p className="text-zinc-500 text-sm">No siblings found.</p>
+            )}
+
+            {siblingPanel.siblings.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2">
+                {siblingPanel.siblings.map((sib) => (
+                  <div
+                    key={sib.id}
+                    className="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2"
+                  >
+                    <span
+                      className="w-1.5 h-8 rounded-full shrink-0"
+                      style={{ background: SEX_STRIPE[sib.sex ?? ''] ?? SEX_STRIPE[''] }}
+                    />
+                    <div className="overflow-hidden flex-1 min-w-0">
+                      <div className="text-xs font-medium text-zinc-200 truncate">
+                        {sib.first_name} {sib.last_name}
+                      </div>
+                      {sib.birth_date && (
+                        <div className="text-[10px] text-zinc-500 truncate">b. {sib.birth_date}</div>
+                      )}
+                      <div className="flex gap-1 mt-1.5">
+                        <a
+                          href={`/tree/${sib.id}`}
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-900/60 text-emerald-300 hover:bg-emerald-800 transition-colors"
+                        >
+                          🌳 Root
+                        </a>
+                        <a
+                          href={`/person/${sib.id}`}
+                          className="text-[10px] px-1.5 py-0.5 rounded bg-zinc-700 text-zinc-300 hover:bg-zinc-600 transition-colors"
+                        >
+                          Profile
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -475,63 +678,12 @@ function centerRoot(
   svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
   zoom: d3.ZoomBehavior<SVGSVGElement, unknown>,
   nodes: HierarchyNode[],
+  _hasBothSides: boolean,
 ) {
   const svgNode = svg.node()!;
   const h = svgNode.clientHeight || svgNode.getBoundingClientRect().height || 600;
   const xs = nodes.map((n) => n.x ?? 0);
   const xCenter = (Math.min(...xs) + Math.max(...xs)) / 2;
+  // Always start root near left edge; descendants are below, not right
   svg.call(zoom.transform, d3.zoomIdentity.translate(48, h / 2 - xCenter));
-}
-
-function applyVisuals(
-  g: d3.Selection<SVGGElement, unknown, null, undefined>,
-  nodes: HierarchyNode[],
-  links: Array<d3.HierarchyLink<TreeNode>>,
-  pending: Set<string>,
-  activeFilter: Set<string> | null,
-) {
-  const allIds = new Set(nodes.map((n) => n.data.id));
-  const universe = activeFilter
-    ? new Set([...activeFilter].filter((id) => allIds.has(id)))
-    : allIds;
-  const preview = pending.size ? computeReachable(pending, universe, links) : null;
-
-  g.selectAll<SVGGElement, HierarchyNode>('.tb').each(function (d) {
-    const id = d.data.id;
-    const inU = universe.has(id);
-    const sel = d3.select(this);
-    sel.style('display', inU ? '' : 'none');
-    sel.style('opacity', preview ? (preview.has(id) ? 1 : 0.08) : 1);
-
-    const isPending = pending.has(id);
-    sel
-      .select('.node-rect')
-      .attr('stroke', isPending ? '#7c3aed' : '#52525b')
-      .attr('stroke-width', isPending ? 2 : 1.5)
-      .attr(
-        'fill',
-        isPending
-          ? '#1e1b4b'
-          : d.data.sex === 'M'
-            ? '#1a1f35'
-            : d.data.sex === 'F'
-              ? '#201a2d'
-              : '#18181b',
-      );
-    sel.select('.node-name').attr('fill', isPending ? '#c4b5fd' : '#e4e4e7');
-  });
-
-  g.selectAll<SVGPathElement, d3.HierarchyLink<TreeNode>>('.tree-link').each(function (d) {
-    const inU = universe.has(d.source.data.id) && universe.has(d.target.data.id);
-    const el = d3.select(this);
-    el.style('display', inU ? '' : 'none');
-    el.style(
-      'opacity',
-      preview
-        ? preview.has(d.source.data.id) && preview.has(d.target.data.id)
-          ? 1
-          : 0.05
-        : 1,
-    );
-  });
 }

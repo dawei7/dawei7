@@ -177,6 +177,56 @@ func GetParents(ctx context.Context, pool *pgxpool.Pool, personID string) (fathe
 	return father, mother, nil
 }
 
+// hasSiblings returns true if personID shares a parent family with at least one other child.
+func hasSiblings(ctx context.Context, pool *pgxpool.Pool, personID string) (bool, error) {
+	var has bool
+	err := pool.QueryRow(ctx,
+		`SELECT EXISTS (
+			SELECT 1 FROM family_children fc
+			WHERE fc.family_id IN (
+				SELECT family_id FROM family_children WHERE person_id = $1::uuid
+			)
+			AND fc.person_id != $1::uuid
+		)`, personID).Scan(&has)
+	return has, err
+}
+
+// GetSiblings returns all other children of the same parent family as personID.
+func GetSiblings(ctx context.Context, pool *pgxpool.Pool, personID string) ([]*Person, error) {
+	// Find the family this person is a child of
+	var famID string
+	err := pool.QueryRow(ctx,
+		`SELECT family_id::text FROM family_children WHERE person_id = $1::uuid LIMIT 1`,
+		personID).Scan(&famID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	// Fetch all children of that family except the person themselves
+	rows, err := pool.Query(ctx,
+		`SELECT `+personCols+`
+		 FROM persons p
+		 JOIN family_children fc ON fc.person_id = p.id
+		 WHERE fc.family_id = $1::uuid AND p.id != $2::uuid
+		 ORDER BY p.birth_date NULLS LAST, p.first_name`,
+		famID, personID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var siblings []*Person
+	for rows.Next() {
+		p, err := scanPerson(rows)
+		if err != nil {
+			return nil, err
+		}
+		siblings = append(siblings, &p)
+	}
+	return siblings, rows.Err()
+}
+
 // GetPersonFamilies returns families where the person appears as a spouse.
 func GetPersonFamilies(ctx context.Context, pool *pgxpool.Pool, personID string) ([]FamilyView, error) {
 	rows, err := pool.Query(ctx,
@@ -232,4 +282,117 @@ func GetPersonFamilies(ctx context.Context, pool *pgxpool.Pool, personID string)
 		families = append(families, fv)
 	}
 	return families, rows.Err()
+}
+
+// UpdatePerson overwrites all editable fields on a person record.
+func UpdatePerson(ctx context.Context, pool *pgxpool.Pool, id string, p Person) error {
+	ns := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	_, err := pool.Exec(ctx, `
+		UPDATE persons SET
+			first_name   = $1,  last_name   = $2,  maiden_name = $3,
+			sex          = $4,
+			birth_date   = $5,  birth_place = $6,
+			death_date   = $7,  death_place = $8,
+			burial_date  = $9,  burial_place = $10,
+			occupation   = $11, notes       = $12
+		WHERE id = $13::uuid`,
+		ns(p.FirstName), ns(p.LastName), ns(p.MaidenName), ns(p.Sex),
+		ns(p.BirthDate), ns(p.BirthPlace),
+		ns(p.DeathDate), ns(p.DeathPlace),
+		ns(p.BurialDate), ns(p.BurialPlace),
+		ns(p.Occupation), ns(p.Notes),
+		id,
+	)
+	return err
+}
+
+// ExportRow is a flat row used for GEDCOM generation.
+type ExportRow struct {
+	Person   Person
+	Families []FamilyExport
+}
+
+// FamilyExport holds a family record for GEDCOM export.
+type FamilyExport struct {
+	GedcomID      string
+	HusbandGedcom string
+	WifeGedcom    string
+	MarriageDate  string
+	MarriagePlace string
+	DivorceDate   string
+	DivorcePlace  string
+	ChildGedcoms  []string
+}
+
+// ExportAll returns all persons and families for GEDCOM export.
+func ExportAll(ctx context.Context, pool *pgxpool.Pool) ([]Person, []FamilyExport, error) {
+	rows, err := pool.Query(ctx, `SELECT `+personCols+` FROM persons ORDER BY last_name, first_name`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	var people []Person
+	for rows.Next() {
+		p, err := scanPerson(rows)
+		if err != nil {
+			return nil, nil, err
+		}
+		people = append(people, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, err
+	}
+
+	famRows, err := pool.Query(ctx, `
+		SELECT f.gedcom_id,
+			COALESCE(h.gedcom_id,''), COALESCE(w.gedcom_id,''),
+			COALESCE(f.marriage_date,''), COALESCE(f.marriage_place,''),
+			COALESCE(f.divorce_date,''), COALESCE(f.divorce_place,'')
+		FROM families f
+		LEFT JOIN persons h ON h.id = f.husband_id
+		LEFT JOIN persons w ON w.id = f.wife_id
+		ORDER BY f.marriage_date`)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer famRows.Close()
+
+	var families []FamilyExport
+	for famRows.Next() {
+		var fe FamilyExport
+		var famGedcomID string
+		if err := famRows.Scan(&famGedcomID, &fe.HusbandGedcom, &fe.WifeGedcom,
+			&fe.MarriageDate, &fe.MarriagePlace, &fe.DivorceDate, &fe.DivorcePlace); err != nil {
+			return nil, nil, err
+		}
+		fe.GedcomID = famGedcomID
+
+		crows, err := pool.Query(ctx, `
+			SELECT COALESCE(p.gedcom_id,'')
+			FROM family_children fc
+			JOIN persons p ON p.id = fc.person_id
+			WHERE fc.family_id = (SELECT id FROM families WHERE gedcom_id = $1)
+			ORDER BY p.birth_date`, famGedcomID)
+		if err != nil {
+			return nil, nil, err
+		}
+		for crows.Next() {
+			var cGedcom string
+			if err := crows.Scan(&cGedcom); err != nil {
+				crows.Close()
+				return nil, nil, err
+			}
+			if cGedcom != "" {
+				fe.ChildGedcoms = append(fe.ChildGedcoms, cGedcom)
+			}
+		}
+		crows.Close()
+		families = append(families, fe)
+	}
+	return people, families, famRows.Err()
 }
