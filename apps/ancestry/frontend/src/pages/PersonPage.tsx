@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useSearchParams } from 'react-router';
 import { usePerson } from '../hooks/usePerson';
 import PersonCard from '../components/PersonCard';
 import { fullName } from '../lib/types';
@@ -50,6 +50,8 @@ function Field({
 
 export default function PersonPage() {
   const { id = '' } = useParams();
+  const [searchParams] = useSearchParams();
+  const rootId = searchParams.get('root') ?? id; // root to return to
   const { data, loading, error } = usePerson(id);
   const { isEditor, secret } = useAuth();
 
@@ -94,7 +96,6 @@ export default function PersonPage() {
   return (
     <div className="max-w-2xl mx-auto px-6">
       <header className="py-10 pb-8 border-b border-zinc-800">
-        <Link to={`/tree/${person.id}`} className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">← Ancestor Tree</Link>
         <div className="flex items-start justify-between mt-3 gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">{name}</h1>
@@ -108,6 +109,14 @@ export default function PersonPage() {
                 ✎ Edit
               </button>
             )}
+            <Link to={`/tree/${rootId}`}
+              className="text-xs px-3 py-1.5 rounded-lg bg-zinc-900 border border-red-800 text-red-400 hover:bg-red-950 transition-colors">
+              ← Back
+            </Link>
+            <Link to={`/tree/${id}`}
+              className="text-xs px-3 py-1.5 rounded-lg bg-zinc-900 border border-green-800 text-green-400 hover:bg-green-950 transition-colors">
+              ⌂ Set as root
+            </Link>
           </div>
         </div>
       </header>

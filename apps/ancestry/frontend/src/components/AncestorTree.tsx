@@ -273,6 +273,9 @@ export default function AncestorTree({ data, rootId, descendants }: Props) {
         .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
         .attr('pointer-events', 'none').text('OPEN');
 
+      // Pass root param so person page can link back to current tree root
+      descNavG.on('click', (e, d) => { e.stopPropagation(); window.location.href = `/person/${d.data.id}?root=${rootIdRef.current}`; });
+
       const dBtnY = NODE_H - 15;
       const dBtnH = 13;
 
@@ -316,7 +319,7 @@ export default function AncestorTree({ data, rootId, descendants }: Props) {
       dRootG.append('text').attr('class', 'dr-lbl')
         .attr('x', 26).attr('y', 10).attr('text-anchor', 'middle')
         .attr('fill', (d) => (d.data.id === rootIdRef.current ? '#86efac' : '#71717a'))
-        .attr('font-size', 9).attr('font-weight', 600).attr('letter-spacing', '0.06em')
+        .attr('font-size', 9).attr('font-weight', 600).attr('letter-spacing', '0.03em')
         .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
         .attr('pointer-events', 'none')
         .text((d) => (d.data.id === rootIdRef.current ? '⌂ ROOT' : '⌂ SET ROOT'));
@@ -328,8 +331,8 @@ export default function AncestorTree({ data, rootId, descendants }: Props) {
         .on('click', (e, d) => { e.stopPropagation(); toggleDescNode(d.data.id); });
       descToggleG.append('circle').attr('r', 9).attr('fill', '#27272a')
         .attr('stroke', (d) => (d.children ? '#71717a' : '#7c3aed')).attr('stroke-width', 1.5);
-      descToggleG.append('text').attr('text-anchor', 'middle').attr('dominant-baseline', 'central')
-        .attr('fill', (d) => (d.children ? '#a1a1aa' : '#a78bfa')).attr('font-size', 16)
+      descToggleG.append('text').attr('text-anchor', 'middle').attr('dy', '0.35em')
+        .attr('fill', (d) => (d.children ? '#a1a1aa' : '#a78bfa')).attr('font-size', 14)
         .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
         .attr('pointer-events', 'none').text((d) => (d.children ? '−' : '+'));
     }
@@ -456,7 +459,7 @@ export default function AncestorTree({ data, rootId, descendants }: Props) {
       .text('≡  SIBLINGS');
 
     // "Set as root" button — pill to the right of siblings
-    const rootBtnW = 52;
+    const rootBtnW = 58;
     const rootBtnX = 76;
     const rootG = nodeG
       .append('g')
@@ -495,7 +498,7 @@ export default function AncestorTree({ data, rootId, descendants }: Props) {
       .attr('fill', (d) => (d.data.id === rootIdRef.current ? '#86efac' : '#71717a'))
       .attr('font-size', 9)
       .attr('font-weight', 600)
-      .attr('letter-spacing', '0.06em')
+      .attr('letter-spacing', '0.03em')
       .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
       .attr('pointer-events', 'none')
       .text((d) => (d.data.id === rootIdRef.current ? '⌂ ROOT' : '⌂ SET ROOT'));
@@ -514,7 +517,7 @@ export default function AncestorTree({ data, rootId, descendants }: Props) {
       .style('cursor', 'pointer')
       .on('click', (e, d) => {
         e.stopPropagation();
-        window.location.href = `/person/${d.data.id}`;
+        window.location.href = `/person/${d.data.id}?root=${rootIdRef.current}`;
       })
       .on('mouseenter', function () {
         d3.select(this).select('.nav-bg').attr('fill', '#5b21b6');
@@ -569,9 +572,9 @@ export default function AncestorTree({ data, rootId, descendants }: Props) {
     toggleG
       .append('text')
       .attr('text-anchor', 'middle')
-      .attr('dominant-baseline', 'central')
+      .attr('dy', '0.35em')
       .attr('fill', (d) => (d.children ? '#a1a1aa' : '#a78bfa'))
-      .attr('font-size', 16)
+      .attr('font-size', 14)
       .attr('font-family', 'ui-sans-serif, system-ui, sans-serif')
       .attr('pointer-events', 'none')
       .text((d) => (d.children ? '−' : '+'));

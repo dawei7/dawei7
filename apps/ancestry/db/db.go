@@ -3,7 +3,9 @@ package db
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -91,10 +93,15 @@ func CountPeople(ctx context.Context, pool *pgxpool.Pool, search string) (int, e
 	var count int
 	var err error
 	if search != "" {
-		err = pool.QueryRow(ctx,
-			`SELECT COUNT(*) FROM persons
-			 WHERE first_name ILIKE '%'||$1||'%' OR last_name ILIKE '%'||$1||'%'`,
-			search).Scan(&count)
+		words := strings.Fields(search)
+		args := make([]any, len(words))
+		conds := make([]string, len(words))
+		for i, w := range words {
+			args[i] = "%" + w + "%"
+			conds[i] = fmt.Sprintf("(first_name ILIKE $%d OR last_name ILIKE $%d)", i+1, i+1)
+		}
+		q := "SELECT COUNT(*) FROM persons WHERE " + strings.Join(conds, " AND ")
+		err = pool.QueryRow(ctx, q, args...).Scan(&count)
 	} else {
 		err = pool.QueryRow(ctx, `SELECT COUNT(*) FROM persons`).Scan(&count)
 	}
@@ -108,13 +115,18 @@ func ListPeople(ctx context.Context, pool *pgxpool.Pool, search string, limit, o
 		err  error
 	)
 	if search != "" {
-		rows, err = pool.Query(ctx,
-			`SELECT `+personCols+`
-			 FROM persons
-			 WHERE first_name ILIKE '%'||$1||'%' OR last_name ILIKE '%'||$1||'%'
-			 ORDER BY last_name, first_name
-			 LIMIT $2 OFFSET $3`,
-			search, limit, offset)
+		words := strings.Fields(search)
+		conds := make([]string, len(words))
+		args := make([]any, len(words)+2)
+		for i, w := range words {
+			args[i] = "%" + w + "%"
+			conds[i] = fmt.Sprintf("(first_name ILIKE $%d OR last_name ILIKE $%d)", i+1, i+1)
+		}
+		args[len(words)] = limit
+		args[len(words)+1] = offset
+		q := `SELECT ` + personCols + ` FROM persons WHERE ` + strings.Join(conds, " AND ") +
+			fmt.Sprintf(` ORDER BY last_name, first_name LIMIT $%d OFFSET $%d`, len(words)+1, len(words)+2)
+		rows, err = pool.Query(ctx, q, args...)
 	} else {
 		rows, err = pool.Query(ctx,
 			`SELECT `+personCols+`

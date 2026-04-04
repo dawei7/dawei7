@@ -84,14 +84,24 @@ export default function TreePage() {
           {searchOpen && searchQuery.length > 0 && searchResults.length > 0 && (
             <div className="absolute top-full mt-1 left-0 right-0 bg-zinc-900 border border-zinc-700 rounded-lg shadow-xl z-50 max-h-72 overflow-y-auto">
               {searchResults.slice(0, 20).map((p) => (
-                <button
-                  key={p.id}
-                  className="w-full text-left px-3 py-2 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors border-b border-zinc-800/50 last:border-0"
-                  onClick={() => { navigate(`/tree/${p.id}`); setSearchQuery(''); setSearchOpen(false); }}
-                >
-                  <span className="font-medium">{fullName(p)}</span>
-                  {p.birth_date && <span className="text-zinc-500 text-xs ml-2">b. {p.birth_date}</span>}
-                </button>
+                <div key={p.id} className="flex items-center gap-1 border-b border-zinc-800/50 last:border-0 px-2 py-1.5 hover:bg-zinc-800/50 transition-colors">
+                  <div className="flex-1 min-w-0 px-1">
+                    <span className="text-sm font-medium text-zinc-200">{fullName(p)}</span>
+                    {p.birth_date && <span className="text-zinc-500 text-xs ml-2">b. {p.birth_date}</span>}
+                  </div>
+                  <button
+                    className="shrink-0 text-xs px-2 py-1 rounded bg-zinc-700 text-zinc-300 hover:bg-violet-700 hover:text-white transition-colors"
+                    onClick={() => { navigate(`/person/${p.id}?root=${id}`); setSearchQuery(''); setSearchOpen(false); }}
+                    title="Open details">
+                    Open
+                  </button>
+                  <button
+                    className="shrink-0 text-xs px-2 py-1 rounded bg-zinc-700 text-zinc-300 hover:bg-green-800 hover:text-green-200 transition-colors"
+                    onClick={() => { navigate(`/tree/${p.id}`); setSearchQuery(''); setSearchOpen(false); }}
+                    title="Set as tree root">
+                    ⌂ Root
+                  </button>
+                </div>
               ))}
             </div>
           )}
