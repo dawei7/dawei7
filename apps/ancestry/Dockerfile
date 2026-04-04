@@ -3,9 +3,9 @@ FROM node:22-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci && chmod -R +x node_modules/.bin
+RUN npm ci
 COPY frontend/ ./
-RUN npm run build
+RUN node node_modules/typescript/bin/tsc -b && node node_modules/vite/bin/vite.js build
 
 # ─── Go backend build ─────────────────────────────────────────────────────────
 FROM golang:1.24 AS backend-builder
