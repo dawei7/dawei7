@@ -47,6 +47,12 @@ func main() {
 		w.Write(styleCSS)
 	})
 
+	// Google Search Console HTML-file check for https://dawei7.com/
+	mux.HandleFunc("GET /googleb26wIb6Chm8oTQvP_buRwHSNRk2vUr2dSvzqSRZt2LM.html", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Write([]byte("google-site-verification: b26wIb6Chm8oTQvP_buRwHSNRk2vUr2dSvzqSRZt2LM\n"))
+	})
+
 	// Health check (used by Traefik and CI)
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
