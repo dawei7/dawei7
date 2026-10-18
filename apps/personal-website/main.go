@@ -88,5 +88,11 @@ func projects() []templates.Project {
 			URL:         "https://ancestry.dawei7.com",
 			Tags:        []string{"Go", "React", "D3.js", "PostgreSQL"},
 		},
+		{
+			Title:       "Professor Euler",
+			Description: "Free mathematics study for adults. Read full textbooks, write by hand on a tablet, and check the work with your own AI provider.",
+			URL:         "https://euler.dawei7.com",
+			Tags:        []string{"Android", "Mathematics", "Education"},
+		},
 	}
 }
