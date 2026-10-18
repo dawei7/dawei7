@@ -3,8 +3,8 @@ FROM golang:1.24 AS builder
 
 WORKDIR /app
 
-# Install templ CLI
-RUN go install github.com/a-h/templ/cmd/templ@latest
+# Pin the CLI to the module version. @latest (v0.3.1070) requires Go 1.26.
+RUN go install github.com/a-h/templ/cmd/templ@v0.3.1001
 
 # Install Tailwind CSS standalone CLI
 # Resolve the actual latest version tag via API (avoids broken /latest/download/ redirect)
