@@ -1,6 +1,6 @@
 {
-  "version": "2.1.1",
-  "notes": "The Windows app opens from a double-click, and it uses the Professor Euler icon.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-2.1.1.exe",
-  "sha256": "b1bfab37897caaf1af95f13db3cc125e14402ca329852ecf1991aac6b3b1d3f8"
+  "version": "2.1.2",
+  "notes": "Google Drive sync finishes on Windows.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-2.1.2.exe",
+  "sha256": "b09316409f6e8c80a39715630e842a0b1cb7c4461e972cc40583ff9134e64575"
 }
