@@ -1,6 +1,6 @@
 {
-  "version": "4.3.1",
-  "notes": "Sync fixed: unchanged books are no longer sent back and forth between the Windows app and your phone or tablet at every sync, which could overwrite a page, a folder or study time changed on another device.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-4.3.1.exe",
-  "sha256": "ef9b682aeceb4ae8bf4e5de4a6e87b4679c3754ab667adc36e27d30b7563eca5"
+  "version": "4.4.0",
+  "notes": "New: locked folders. Lock a folder in My books with one password, typed twice; what is inside stays hidden until you enter it, and locks reach your other devices with Google Drive sync. A lock hides, it does not encrypt, and a forgotten password cannot be reset. The Windows app now runs once, and Update closes it and starts the new version by itself.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-4.4.0.exe",
+  "sha256": "6901d627a82b01d0e6b43b1a299d6c3bef2e3e7604a5e644793b95fd3e89bde3"
 }
