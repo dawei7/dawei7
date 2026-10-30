@@ -1,6 +1,6 @@
 {
-  "version": "4.3.0",
-  "notes": "The new Professor Euler: My books, Markdown notes and notes that sync among your devices, recordings with timestamp notes, and Statistics.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-4.3.0.exe",
-  "sha256": "c1d76d63e34f09a2b377d1fa0242fc34c7aa0b68a10898273f70293be176e2ed"
+  "version": "4.3.1",
+  "notes": "Sync fixed: unchanged books are no longer sent back and forth between the Windows app and your phone or tablet at every sync, which could overwrite a page, a folder or study time changed on another device.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-4.3.1.exe",
+  "sha256": "ef9b682aeceb4ae8bf4e5de4a6e87b4679c3754ab667adc36e27d30b7563eca5"
 }
