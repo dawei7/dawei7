@@ -1,6 +1,6 @@
 {
-  "version": "4.4.0",
-  "notes": "New: locked folders. Lock a folder in My books with one password, typed twice; what is inside stays hidden until you enter it, and locks reach your other devices with Google Drive sync. A lock hides, it does not encrypt, and a forgotten password cannot be reset. The Windows app now runs once, and Update closes it and starts the new version by itself.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-4.4.0.exe",
-  "sha256": "6901d627a82b01d0e6b43b1a299d6c3bef2e3e7604a5e644793b95fd3e89bde3"
+  "version": "4.4.1",
+  "notes": "Sync fixed: My books is now arranged the same on every device. Folders (empty ones too), renamed, moved or removed folders, the folder and name of each document and the order you drag them into reach your other devices, and reading a book on one device no longer puts it back where it was. Update Professor Euler on all your devices.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-4.4.1.exe",
+  "sha256": "929a867a1e3467170b56270db287c64cb60ed28847ebabf9a020ea9454ef2887"
 }

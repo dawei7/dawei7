@@ -6,8 +6,8 @@ COPY public/ /usr/share/nginx/html/
 # The installer is too large for git. The public release asset is copied into the
 # image so the website itself can hand it to a learner.
 RUN apk add --no-cache curl \
- && curl -fsSL -o /usr/share/nginx/html/desktop/Professor-Euler-4.4.0.exe \
-      https://github.com/dawei7/dawei7/releases/download/desktop-4.4.0/Professor-Euler-4.4.0.exe \
+ && curl -fsSL -o /usr/share/nginx/html/desktop/Professor-Euler-4.4.1.exe \
+      https://github.com/dawei7/dawei7/releases/download/desktop-4.4.1/Professor-Euler-4.4.1.exe \
  && apk del curl
 
 EXPOSE 8080
