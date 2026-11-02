@@ -1,6 +1,6 @@
 {
-  "version": "4.5.0",
-  "notes": "New: Calculate in canvas notes. Draw a loop around a handwritten formula, and Professor Euler shows what it read and the answer: arithmetic, fractions, powers, roots, sin, cos, tan, logarithms and equations in one unknown. A small model reads your writing on this computer: no AI provider, no API key, no AI credit, and nothing you write is sent anywhere. Turn it on in Settings > Reading & focus; the model (about 8 MB) is downloaded once.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-4.5.0.exe",
-  "sha256": "f45e45b1ec12866c94a554fca5cd6b9a8c04042d67f57c25b8a392e5fa73621b"
+  "version": "4.6.0",
+  "notes": "New: Calculate is on, on every handwriting sheet and on PDF pages. Circle what you wrote: exact values, fractions and roots, every kind of equation, inequalities and systems, derivatives, integrals, limits and graphs you can put on your sheet. Show steps explains the working, and circling several lines checks your own steps. A small model inside the app reads your writing on this computer: no AI provider, no API key, no AI credit, and nothing you write is sent anywhere.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-4.6.0.exe",
+  "sha256": "309880501b6e0e55273a211dd356632165265f724e0d97c281cb5135f5d6e6b3"
 }
