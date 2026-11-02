@@ -1,6 +1,6 @@
 {
-  "version": "4.6.0",
-  "notes": "New: Calculate is on, on every handwriting sheet and on PDF pages. Circle what you wrote: exact values, fractions and roots, every kind of equation, inequalities and systems, derivatives, integrals, limits and graphs you can put on your sheet. Show steps explains the working, and circling several lines checks your own steps. A small model inside the app reads your writing on this computer: no AI provider, no API key, no AI credit, and nothing you write is sent anywhere.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-4.6.0.exe",
-  "sha256": "309880501b6e0e55273a211dd356632165265f724e0d97c281cb5135f5d6e6b3"
+  "version": "4.7.0",
+  "notes": "New: Perfect shapes. Draw a circle, a triangle, a square, any polygon or an arrow with the pen or the mouse and hold still at its end: it becomes a Geometry figure on the grid, outlined, to move, resize and edit. A line or curve held over a graph becomes the graph of its function; held lines can make a coordinate system, a table or a number line. On by default, off in Settings. Also: a graph's functions can be changed with their pencil, and its eye hides a curve again.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-4.7.0.exe",
+  "sha256": "4fe0930de735a7e7dd29e8e874f0f57a4c32e2e6abf74788dd58545fcb9db89b"
 }
