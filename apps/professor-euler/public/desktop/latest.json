@@ -1,6 +1,6 @@
 {
-  "version": "5.2.4",
-  "notes": "New on Windows: Music. Import songs or a whole folder, make playlists, and play them with a queue, repeat and shuffle while you study; the mini player stays at the foot of the home screen and the study desk has a music button. A lecture recording pauses the music, and it goes on afterwards. Without Keep music playing in the background (Settings), music pauses while the window is minimized.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.2.4.exe",
-  "sha256": "23a0620353d22c215fa7b49aaf63fdf136ee86891d9fbae5fc2524a9377ac8b5"
+  "version": "5.2.5",
+  "notes": "New: see how much space everything takes. My books shows the size of each book, recording and note, every folder the total of all it holds, and My books its whole size; Music shows each song's size, every playlist's total and the whole of Music.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.2.5.exe",
+  "sha256": "e303756fbd5d131b9cc54e5f3937188f0b257cb92262f2865aefe607004c84dc"
 }
