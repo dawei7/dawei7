@@ -1,6 +1,6 @@
 {
-  "version": "4.7.0",
-  "notes": "New: Perfect shapes. Draw a circle, a triangle, a square, any polygon or an arrow with the pen or the mouse and hold still at its end: it becomes a Geometry figure on the grid, outlined, to move, resize and edit. A line or curve held over a graph becomes the graph of its function; held lines can make a coordinate system, a table or a number line. On by default, off in Settings. Also: a graph's functions can be changed with their pencil, and its eye hides a curve again.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-4.7.0.exe",
-  "sha256": "4fe0930de735a7e7dd29e8e874f0f57a4c32e2e6abf74788dd58545fcb9db89b"
+  "version": "5.2.3",
+  "notes": "New since 4.7: the Calculator, with nearly 300 functions, each explained with examples in Guide & examples; enter a problem on its keys or circle it on your sheet, and every answer is checked before it is shown, all on your computer. The Professor Euler Curriculum, our own course tree from Grade 6 to MSc: choose a track or your own path, practise topic by topic, get reviews when they are due, and earn 77 achievements on the way to Professor Euler. Grade yourself, or send an exercise to your own AI app and paste its grading back. Also: a compass in the drawing tools, sync can be turned off per document or folder, and Settings are newly ordered.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.2.3.exe",
+  "sha256": "71b5b7c0888ad1ba745a847741bd1ac83353248e2de18bb40cfa9d8de779c545"
 }
