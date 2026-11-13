@@ -1,6 +1,6 @@
 {
-  "version": "5.2.9",
-  "notes": "Fixed: a check could fail with \"Unterminated object\" when the AI's feedback quoted words in German with „ and a plain quotation mark. Such a reply is now read, and still checked in full before any score is saved.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.2.9.exe",
-  "sha256": "e8cb775e73394eb3a4ae52b52433496860634f28773a3cdb6ecdde8f147d0897"
+  "version": "5.3.0",
+  "notes": "New in the Curriculum: career paths from Grade 6 to MSc, as many paths as you like, and paths of your own in the order you want.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.3.0.exe",
+  "sha256": "241dd3a797f056a9d309052f8504a5bc506e59f6fa7e4306a578167f859cae34"
 }
