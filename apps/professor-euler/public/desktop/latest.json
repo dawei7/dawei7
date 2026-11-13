@@ -1,6 +1,6 @@
 {
-  "version": "5.2.5",
-  "notes": "New: see how much space everything takes. My books shows the size of each book, recording and note, every folder the total of all it holds, and My books its whole size; Music shows each song's size, every playlist's total and the whole of Music.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.2.5.exe",
-  "sha256": "e303756fbd5d131b9cc54e5f3937188f0b257cb92262f2865aefe607004c84dc"
+  "version": "5.2.7",
+  "notes": "New: curriculum workbooks in other languages, chosen on each workbook (German for Algebra 1, Geometry and Algebra 2); your work moves with each exercise between the languages. Pages made for a phone are shown edge to edge on a narrow window.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.2.7.exe",
+  "sha256": "fc852f48ebd91b4e534817ff0ecc2c266f41f4123440d7a454194a20a0c1d8f0"
 }
