@@ -1,6 +1,6 @@
 {
-  "version": "5.2.8",
-  "notes": "New: every book shows its whole page; no margin is hidden by itself any more. To hide a book's empty margins, set a crop of your own with Trim page borders.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.2.8.exe",
-  "sha256": "ff6e1816a0c7942bca4013e6c85e23ee3f970eef6e322178ab095b25e79e5fd3"
+  "version": "5.2.9",
+  "notes": "Fixed: a check could fail with \"Unterminated object\" when the AI's feedback quoted words in German with „ and a plain quotation mark. Such a reply is now read, and still checked in full before any score is saved.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.2.9.exe",
+  "sha256": "e8cb775e73394eb3a4ae52b52433496860634f28773a3cdb6ecdde8f147d0897"
 }
