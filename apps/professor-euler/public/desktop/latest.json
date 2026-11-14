@@ -1,6 +1,6 @@
 {
-  "version": "5.4.2",
-  "notes": "In a curriculum workbook, the exercise list on the left follows the topic you are reading.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.4.2.exe",
-  "sha256": "7d25e3d7d74b94bfc9e7a231f57f4ea77477c83c11fcf7da8d9344138ca501eb"
+  "version": "5.4.3",
+  "notes": "Curriculum grades and progress sync reliably between your devices, also right after a workbook update.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.4.3.exe",
+  "sha256": "04299c5a04fbcc74738fa87eec4c63347f7a5dd8e243fbbfe12e068a53094d52"
 }
