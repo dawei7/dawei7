@@ -1,6 +1,6 @@
 {
-  "version": "5.4.0",
-  "notes": "The Professor Euler Curriculum takes the lead, only the first library book comes with the installer (about 115 MB smaller), career paths say they cover only the mathematics, and the music player closes with an X.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.4.0.exe",
-  "sha256": "aa62cffda4c8cd929ecca1a6d411b9e54b8d92f3e29081d95c3b015bf7b3bd04"
+  "version": "5.4.1",
+  "notes": "Learning paths are removed with an X on their chip, and a unit marked as finished can be taken back, which stops its reviews.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.4.1.exe",
+  "sha256": "c0c0904f44a7c3756d2c9cb3a41c9d39aaecdf9e317a0a6c3e773248a50d095d"
 }
