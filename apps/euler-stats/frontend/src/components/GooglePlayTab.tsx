@@ -96,7 +96,7 @@ export function GooglePlayTab({ defaultTz, tzOptions, refreshTick }: GooglePlayT
       let nextRange = prev.range;
       if (g === 'hour') {
         setMetricMode('vitals');
-        if (prev.range === '90d' || prev.range === 'all') nextRange = '7d';
+        if (prev.range === '90d' || prev.range === 'all') nextRange = '30d';
       } else if (metricMode === 'vitals') {
         setMetricMode('installs');
       }
@@ -296,12 +296,14 @@ export function GooglePlayTab({ defaultTz, tzOptions, refreshTick }: GooglePlayT
                 <div className="flex justify-between">
                   <span className="text-[#6e6558]">Window installs / uninstalls</span>
                   <span>
-                    +{formatNumber(overview.window.device_installs)} / -{formatNumber(overview.window.device_uninstalls)}
+                    +{formatNumber(overview.window.device_installs)} / -{formatNumber(overview.window.user_uninstalls)}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-[#6e6558]">User installs (all-time)</span>
-                  <span>{formatNumber(overview.totals.user_installs)}</span>
+                  <span className="text-[#6e6558]">User installs / uninstalls</span>
+                  <span>
+                    {formatNumber(overview.totals.user_installs)} / {formatNumber(overview.totals.user_uninstalls)}
+                  </span>
                 </div>
               </div>
             </div>
@@ -570,7 +572,7 @@ export function GooglePlayTab({ defaultTz, tzOptions, refreshTick }: GooglePlayT
                               {formatNumber(row.user_installs)}
                             </td>
                             <td className="py-2.5 px-3 text-right text-[#a4513a]">
-                              {formatNumber(row.device_uninstalls)}
+                              {formatNumber(row.user_uninstalls)}
                             </td>
                             <td className="py-2.5 px-3 text-right font-medium text-[#1c1914]">
                               {formatNumber(row.active_devices)}
@@ -768,7 +770,7 @@ function PlayChart({ data, mode, onChangeMode, tz }: PlayChartProps) {
   const getVals = (p: PlayTimeSeriesPoint): [number, number, number] => {
     switch (mode) {
       case 'installs':
-        return [p.device_installs, p.user_installs, p.device_uninstalls];
+        return [p.device_installs, p.user_installs, p.user_uninstalls];
       case 'active':
         return [p.active_devices, 0, 0];
       case 'funnel':
@@ -917,7 +919,7 @@ function PlayChart({ data, mode, onChangeMode, tz }: PlayChartProps) {
               if (mode === 'installs') {
                 const subW = Math.max(1.5, barW / 2);
                 const h1 = (p.device_installs / maxVal) * plotH;
-                const h2 = (p.device_uninstalls / maxVal) * plotH;
+                const h2 = (p.user_uninstalls / maxVal) * plotH;
                 return (
                   <g key={idx}>
                     {p.device_installs > 0 && (
@@ -930,7 +932,7 @@ function PlayChart({ data, mode, onChangeMode, tz }: PlayChartProps) {
                         rx={1}
                       />
                     )}
-                    {p.device_uninstalls > 0 && (
+                    {p.user_uninstalls > 0 && (
                       <rect
                         x={cx + 0.5}
                         y={margin.top + plotH - h2}
@@ -1067,7 +1069,7 @@ function PlayChart({ data, mode, onChangeMode, tz }: PlayChartProps) {
                 <div className="flex justify-between">
                   <span>Uninstalls / Active:</span>
                   <span>
-                    {formatNumber(hovered.device_uninstalls)} / {formatNumber(hovered.active_devices)}
+                    {formatNumber(hovered.user_uninstalls)} / {formatNumber(hovered.active_devices)}
                   </span>
                 </div>
                 <div className="flex justify-between">
