@@ -48,16 +48,26 @@ func (f *fakeAnalyticsReader) GetTimeSeries(_ context.Context, p db.QueryParams)
 	}, nil
 }
 
-func (f *fakeAnalyticsReader) GetAssets(_ context.Context, p db.QueryParams, _, _ string) ([]db.AssetRow, error) {
+func (f *fakeAnalyticsReader) GetAssets(_ context.Context, p db.QueryParams, _ db.AssetMode, _, _ string) ([]db.AssetRow, error) {
 	f.lastParams = p
 	return []db.AssetRow{{
-		AssetID:          1,
-		ReleaseTag:       "curriculum",
-		AssetName:        "alg1_wb1-1413444f.mcbundle",
-		DisplayTitle:     "Algebra 1 · WB 1",
-		AllTimeDownloads: 7,
-		WindowDelta:      2,
+		AssetID:                 1,
+		ReleaseTag:              "curriculum",
+		AssetName:               "alg1_wb1-1413444f.mcbundle",
+		ItemKey:                 "alg1_wb1",
+		DisplayTitle:            "Algebra 1 · WB 1",
+		VersionCount:            2,
+		CurrentVersionDownloads: 3,
+		AllTimeDownloads:        10,
+		WindowDelta:             2,
 	}}, nil
+}
+
+func (f *fakeAnalyticsReader) GetItemVersions(_ context.Context, releaseTag, itemKey string) ([]db.AssetRow, error) {
+	return []db.AssetRow{
+		{AssetID: 2, ReleaseTag: releaseTag, ItemKey: itemKey, AssetName: itemKey + "-new.mcbundle", IsActive: true, AllTimeDownloads: 3},
+		{AssetID: 1, ReleaseTag: releaseTag, ItemKey: itemKey, AssetName: itemKey + "-old.mcbundle", IsActive: false, AllTimeDownloads: 7},
+	}, nil
 }
 
 func (f *fakeAnalyticsReader) GetPollRuns(context.Context, int) ([]db.PollRunRow, error) {
@@ -121,5 +131,20 @@ func TestHandlersValidationCSVAndAdminAuth(t *testing.T) {
 	var pollBody poller.PollResult
 	if err := json.Unmarshal(recAuth.Body.Bytes(), &pollBody); err != nil || pollBody.PollRunID != 42 {
 		t.Fatalf("unexpected poll body: %s", recAuth.Body.String())
+	}
+
+	// 5. Item versions endpoint + item_key timeseries filter
+	reqVer := httptest.NewRequest(http.MethodGet, "/api/item-versions?release=curriculum&item_key=alg1_wb1", nil)
+	recVer := httptest.NewRecorder()
+	mux.ServeHTTP(recVer, reqVer)
+	if recVer.Code != http.StatusOK || !strings.Contains(recVer.Body.String(), "alg1_wb1-old.mcbundle") {
+		t.Fatalf("unexpected item-versions response (%d): %s", recVer.Code, recVer.Body.String())
+	}
+
+	reqTSItem := httptest.NewRequest(http.MethodGet, "/api/timeseries?granularity=day&item_key=alg1_wb1", nil)
+	recTSItem := httptest.NewRecorder()
+	mux.ServeHTTP(recTSItem, reqTSItem)
+	if recTSItem.Code != http.StatusOK || reader.lastParams.ItemKey != "alg1_wb1" {
+		t.Fatalf("expected item_key parsed into QueryParams, got %+v", reader.lastParams)
 	}
 }

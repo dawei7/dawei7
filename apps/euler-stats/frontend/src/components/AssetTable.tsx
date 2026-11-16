@@ -1,4 +1,4 @@
-import type { AssetRow } from '../lib/types';
+import type { AssetMode, AssetRow } from '../lib/types';
 import { editionLabel, formatBytes, formatNumber, languageBadge } from '../lib/format';
 
 export type SortField =
@@ -11,6 +11,8 @@ export type SortField =
 
 interface AssetTableProps {
   assets: AssetRow[];
+  mode: AssetMode;
+  onChangeMode: (m: AssetMode) => void;
   sort: SortField;
   dir: 'asc' | 'desc';
   onSort: (field: SortField) => void;
@@ -20,6 +22,8 @@ interface AssetTableProps {
 
 export function AssetTable({
   assets,
+  mode,
+  onChangeMode,
   sort,
   dir,
   onSort,
@@ -51,19 +55,50 @@ export function AssetTable({
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-[#e7e0d2]">
         <div>
           <h2 className="text-lg font-medium text-[#1c1914]">
-            Release Assets Leaderboard ({assets.length})
+            {mode === 'items'
+              ? `Workbooks & Books — Accumulated Across Versions (${assets.length})`
+              : `Individual File Versions (${assets.length})`}
           </h2>
           <p className="text-xs text-[#6e6558]">
-            Click any book or workbook to inspect its per-hour and per-day download history.
+            {mode === 'items'
+              ? 'Downloads automatically accumulate across replaced/deleted file hashes of the same workbook or book. Click a row to view version history.'
+              : 'Each uploaded GitHub release file hash listed separately, including retired versions.'}
           </p>
         </div>
 
-        <a
-          href={csvUrl}
-          className="inline-flex items-center gap-1.5 rounded-full border border-[#d5cdb8] bg-[#f3eee4] px-3.5 py-1.5 text-xs font-medium text-[#1c1914] hover:border-[#8d6b32] transition-colors"
-        >
-          Download Assets CSV
-        </a>
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="inline-flex rounded-full border border-[#d5cdb8] bg-[#f3eee4] p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => onChangeMode('items')}
+              className={`rounded-full px-3 py-1 cursor-pointer transition-colors ${
+                mode === 'items'
+                  ? 'bg-[#1e4636] text-[#faf7f1] font-medium'
+                  : 'text-[#4a4338] hover:text-[#1c1914]'
+              }`}
+            >
+              Accumulated by Item
+            </button>
+            <button
+              type="button"
+              onClick={() => onChangeMode('files')}
+              className={`rounded-full px-3 py-1 cursor-pointer transition-colors ${
+                mode === 'files'
+                  ? 'bg-[#1e4636] text-[#faf7f1] font-medium'
+                  : 'text-[#4a4338] hover:text-[#1c1914]'
+              }`}
+            >
+              Individual Files
+            </button>
+          </div>
+
+          <a
+            href={csvUrl}
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#d5cdb8] bg-[#f3eee4] px-3.5 py-1.5 text-xs font-medium text-[#1c1914] hover:border-[#8d6b32] transition-colors"
+          >
+            Download CSV
+          </a>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -78,7 +113,7 @@ export function AssetTable({
               <th className="py-3 px-3 text-right">{headerBtn('last_24h_delta', '24h Δ', true)}</th>
               <th className="py-3 px-3 text-right">{headerBtn('last_7d_delta', '7d Δ', true)}</th>
               <th className="py-3 px-3 text-right">{headerBtn('window_delta', 'Window Δ', true)}</th>
-              <th className="py-3 pl-3 pr-5 text-right">{headerBtn('all_time_downloads', 'All-Time', true)}</th>
+              <th className="py-3 pl-3 pr-5 text-right">{headerBtn('all_time_downloads', 'Accumulated', true)}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[#ece5d7]">
@@ -91,9 +126,10 @@ export function AssetTable({
             ) : (
               assets.map((a) => {
                 const barW = Math.max(2, Math.round((a.all_time_downloads / maxDownloads) * 100));
+                const rowKey = mode === 'items' ? `${a.release_tag}:${a.item_key}` : String(a.asset_id);
                 return (
                   <tr
-                    key={a.asset_id}
+                    key={rowKey}
                     onClick={() => onSelectAsset(a)}
                     className="hover:bg-[#f3eee4]/75 cursor-pointer transition-colors"
                   >
@@ -105,9 +141,19 @@ export function AssetTable({
                             Bundled
                           </span>
                         )}
+                        {mode === 'items' && a.version_count > 1 && (
+                          <span className="shrink-0 rounded-full bg-[#1e4636]/12 px-2 py-0.5 text-[10px] font-medium text-[#1e4636] tabular-nums">
+                            {a.version_count} versions
+                          </span>
+                        )}
+                        {!a.is_active && (
+                          <span className="shrink-0 rounded-full bg-[#8d6b32]/15 px-2 py-0.5 text-[10px] font-medium text-[#725524]">
+                            Retired
+                          </span>
+                        )}
                       </div>
                       <div className="text-xs text-[#6e6558] truncate mt-0.5 font-mono">
-                        {a.asset_name}
+                        {mode === 'items' ? a.item_key : a.asset_name}
                         {a.author ? ` · ${a.author}` : ''}
                       </div>
                     </td>
@@ -159,6 +205,11 @@ export function AssetTable({
                       <div className="font-semibold text-[#1c1914]">
                         {formatNumber(a.all_time_downloads)}
                       </div>
+                      {mode === 'items' && a.version_count > 1 && (
+                        <div className="text-[10px] text-[#6e6558]">
+                          current: {formatNumber(a.current_version_downloads)}
+                        </div>
+                      )}
                       <div className="mt-1 h-1 w-20 ml-auto rounded-full bg-[#e7e0d2] overflow-hidden">
                         <div className="h-full bg-[#1e4636]" style={{ width: `${barW}%` }} />
                       </div>

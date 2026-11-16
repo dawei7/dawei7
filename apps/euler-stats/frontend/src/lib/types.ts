@@ -2,6 +2,7 @@ export type Granularity = 'hour' | '6h' | 'day' | 'week' | 'month';
 export type GroupBy = 'release' | 'language' | 'edition' | 'none';
 export type RangePreset = '24h' | '48h' | '7d' | '30d' | '90d' | 'all' | 'custom';
 export type MetricMode = 'delta' | 'cumulative';
+export type AssetMode = 'items' | 'files';
 
 export interface FilterState {
   granularity: Granularity;
@@ -140,6 +141,8 @@ export interface AssetRow {
   first_seen_at: string;
   last_seen_at: string;
   is_active: boolean;
+  version_count: number;
+  current_version_downloads: number;
   all_time_downloads: number;
   window_delta: number;
   last_24h_delta: number;

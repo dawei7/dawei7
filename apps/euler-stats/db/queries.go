@@ -66,6 +66,27 @@ func ParseGroupBy(s string) (GroupBy, bool) {
 	}
 }
 
+// AssetMode determines whether the leaderboard aggregates across deleted/replaced versions per item
+// or lists individual GitHub release asset files.
+type AssetMode string
+
+const (
+	AssetModeItems AssetMode = "items"
+	AssetModeFiles AssetMode = "files"
+)
+
+// ParseAssetMode validates an asset listing mode, defaulting to "items".
+func ParseAssetMode(s string) (AssetMode, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "items", "workbooks":
+		return AssetModeItems, true
+	case "files", "assets", "versions":
+		return AssetModeFiles, true
+	default:
+		return "", false
+	}
+}
+
 // QueryParams filters and configures analytics queries.
 type QueryParams struct {
 	From        time.Time
@@ -81,6 +102,7 @@ type QueryParams struct {
 	Edition     string
 	Search      string
 	AssetID     int64
+	ItemKey     string
 }
 
 // PollerStatus summarizes the hourly background collector state.
@@ -190,35 +212,37 @@ type TimeSeriesResponse struct {
 	HourlyProfile  []HourProfilePoint `json:"hourly_profile"`
 }
 
-// AssetRow represents an enriched asset row in the leaderboard.
+// AssetRow represents an enriched asset or version-accumulated logical item row in the leaderboard.
 type AssetRow struct {
-	AssetID             int64      `json:"asset_id"`
-	ReleaseTag          string     `json:"release_tag"`
-	ReleaseName         string     `json:"release_name"`
-	AssetName           string     `json:"asset_name"`
-	ItemKey             string     `json:"item_key"`
-	DisplayTitle        string     `json:"display_title"`
-	Category            string     `json:"category"`
-	Subject             string     `json:"subject"`
-	Language            string     `json:"language"`
-	Edition             string     `json:"edition"`
-	Author              string     `json:"author"`
-	License             string     `json:"license"`
-	Pages               int        `json:"pages"`
-	Exercises           int        `json:"exercises"`
-	IncludedInApp       bool       `json:"included_in_app"`
-	SizeBytes           int64      `json:"size_bytes"`
-	DownloadURL         string     `json:"download_url"`
-	AssetCreatedAt      *time.Time `json:"asset_created_at"`
-	AssetUpdatedAt      *time.Time `json:"asset_updated_at"`
-	FirstSeenAt         time.Time  `json:"first_seen_at"`
-	LastSeenAt          time.Time  `json:"last_seen_at"`
-	IsActive            bool       `json:"is_active"`
-	AllTimeDownloads    int64      `json:"all_time_downloads"`
-	WindowDelta         int64      `json:"window_delta"`
-	Last24hDelta        int64      `json:"last_24h_delta"`
-	Last7dDelta         int64      `json:"last_7d_delta"`
-	SharePct            float64    `json:"share_pct"`
+	AssetID                 int64      `json:"asset_id"`
+	ReleaseTag              string     `json:"release_tag"`
+	ReleaseName             string     `json:"release_name"`
+	AssetName               string     `json:"asset_name"`
+	ItemKey                 string     `json:"item_key"`
+	DisplayTitle            string     `json:"display_title"`
+	Category                string     `json:"category"`
+	Subject                 string     `json:"subject"`
+	Language                string     `json:"language"`
+	Edition                 string     `json:"edition"`
+	Author                  string     `json:"author"`
+	License                 string     `json:"license"`
+	Pages                   int        `json:"pages"`
+	Exercises               int        `json:"exercises"`
+	IncludedInApp           bool       `json:"included_in_app"`
+	SizeBytes               int64      `json:"size_bytes"`
+	DownloadURL             string     `json:"download_url"`
+	AssetCreatedAt          *time.Time `json:"asset_created_at"`
+	AssetUpdatedAt          *time.Time `json:"asset_updated_at"`
+	FirstSeenAt             time.Time  `json:"first_seen_at"`
+	LastSeenAt              time.Time  `json:"last_seen_at"`
+	IsActive                bool       `json:"is_active"`
+	VersionCount            int        `json:"version_count"`
+	CurrentVersionDownloads int64      `json:"current_version_downloads"`
+	AllTimeDownloads        int64      `json:"all_time_downloads"`
+	WindowDelta             int64      `json:"window_delta"`
+	Last24hDelta            int64      `json:"last_24h_delta"`
+	Last7dDelta             int64      `json:"last_7d_delta"`
+	SharePct                float64    `json:"share_pct"`
 }
 
 // PollRunRow represents a row in the collector audit log.
@@ -257,6 +281,7 @@ func buildAssetWhere(p QueryParams, startIdx int) (string, []any) {
 	addEq("a.subject", p.Subject)
 	addEq("a.language", p.Language)
 	addEq("a.edition", p.Edition)
+	addEq("a.item_key", p.ItemKey)
 
 	if p.AssetID > 0 {
 		conds = append(conds, fmt.Sprintf("a.asset_id = $%d", idx))
@@ -417,7 +442,7 @@ func (s *Store) GetOverview(ctx context.Context, p QueryParams) (OverviewRespons
 
 	whereSQL, whereArgs := buildAssetWhere(p, 1)
 
-	// 1. All-time totals across matching assets (using latest_download_count).
+	// 1. All-time totals across matching assets (accumulated across deleted/replaced versions).
 	var latestUpdated *time.Time
 	qAllTime := fmt.Sprintf(`
 		SELECT
@@ -426,7 +451,7 @@ func (s *Store) GetOverview(ctx context.Context, p QueryParams) (OverviewRespons
 			COALESCE(SUM(CASE WHEN a.release_tag = 'books' THEN a.latest_download_count ELSE 0 END), 0)::bigint,
 			COUNT(*)::int,
 			COUNT(*) FILTER (WHERE a.is_active)::int,
-			COALESCE(SUM(a.size_bytes), 0)::bigint,
+			COALESCE(SUM(CASE WHEN a.is_active THEN a.size_bytes ELSE 0 END), 0)::bigint,
 			MAX(a.asset_updated_at)
 		FROM euler_stats.assets a
 		WHERE %s
@@ -652,7 +677,7 @@ func (s *Store) queryBreakdown(
 
 	q := fmt.Sprintf(`
 		WITH filtered AS (
-			SELECT a.asset_id, %s AS dim_key, a.latest_download_count, a.size_bytes
+			SELECT a.asset_id, %s AS dim_key, a.latest_download_count, a.size_bytes, a.is_active
 			FROM euler_stats.assets a
 			WHERE %s
 		),
@@ -667,8 +692,8 @@ func (s *Store) queryBreakdown(
 			f.dim_key,
 			COALESCE(SUM(f.latest_download_count), 0)::bigint AS all_time,
 			COALESCE(MAX(d.window_delta), 0)::bigint AS window_delta,
-			COUNT(*)::int AS asset_count,
-			COALESCE(SUM(f.size_bytes), 0)::bigint AS total_bytes
+			COUNT(*) FILTER (WHERE f.is_active)::int AS asset_count,
+			COALESCE(SUM(CASE WHEN f.is_active THEN f.size_bytes ELSE 0 END), 0)::bigint AS total_bytes
 		FROM filtered f
 		LEFT JOIN deltas d ON d.dim_key = f.dim_key
 		GROUP BY f.dim_key
@@ -775,28 +800,59 @@ func (s *Store) GetTimeSeries(ctx context.Context, p QueryParams) (TimeSeriesRes
 	}
 	rows.Close()
 
-	// 2. Latest cumulative snapshot per bucket and group.
+	// 2. Latest cumulative snapshot per bucket and group, preserving retired/deleted versions'
+	// final counts so cumulative lines never drop when a workbook file is replaced.
 	cumMap := make(map[int64]map[string]int64)
 	qCum := fmt.Sprintf(`
-		WITH bucket_polls AS (
+		WITH filtered_assets AS (
+			SELECT a.*
+			FROM euler_stats.assets a
+			WHERE %s
+		),
+		bucket_polls AS (
 			SELECT
 				EXTRACT(EPOCH FROM (%s))::bigint AS bucket_epoch,
-				MAX(pr.id) AS last_poll_id
+				MAX(pr.id) AS last_poll_id,
+				MAX(pr.polled_at) AS bucket_polled_at
 			FROM euler_stats.poll_runs pr
 			WHERE pr.status = 'ok' AND pr.polled_at >= $%d AND pr.polled_at <= $%d
 			GROUP BY 1
+		),
+		active_in_poll AS (
+			SELECT
+				bp.bucket_epoch,
+				%s AS grp,
+				COALESCE(SUM(s.download_count), 0)::bigint AS cumulative
+			FROM bucket_polls bp
+			JOIN euler_stats.asset_snapshots s ON s.poll_run_id = bp.last_poll_id
+			JOIN filtered_assets a ON a.asset_id = s.asset_id
+			GROUP BY 1, 2
+		),
+		retired_before_poll AS (
+			SELECT
+				bp.bucket_epoch,
+				%s AS grp,
+				COALESCE(SUM(a.latest_download_count), 0)::bigint AS cumulative
+			FROM bucket_polls bp
+			JOIN filtered_assets a
+			  ON a.is_active = FALSE
+			 AND a.first_seen_at <= bp.bucket_polled_at
+			 AND a.last_seen_at < bp.bucket_polled_at
+			 AND NOT EXISTS (
+				SELECT 1 FROM euler_stats.asset_snapshots s2
+				WHERE s2.poll_run_id = bp.last_poll_id AND s2.asset_id = a.asset_id
+			 )
+			GROUP BY 1, 2
 		)
-		SELECT
-			bp.bucket_epoch,
-			%s AS grp,
-			COALESCE(SUM(s.download_count), 0)::bigint AS cumulative
-		FROM bucket_polls bp
-		JOIN euler_stats.asset_snapshots s ON s.poll_run_id = bp.last_poll_id
-		JOIN euler_stats.assets a ON a.asset_id = s.asset_id
-		WHERE %s
+		SELECT bucket_epoch, grp, SUM(cumulative)::bigint AS cumulative
+		FROM (
+			SELECT bucket_epoch, grp, cumulative FROM active_in_poll
+			UNION ALL
+			SELECT bucket_epoch, grp, cumulative FROM retired_before_poll
+		) combined
 		GROUP BY 1, 2
 		ORDER BY 1 ASC
-	`, pollBucketExpr, fromIdx, toIdx, grpExpr, whereSQL)
+	`, whereSQL, pollBucketExpr, fromIdx, toIdx, grpExpr, grpExpr)
 
 	cRows, err := s.Pool.Query(ctx, qCum, bucketArgs...)
 	if err != nil {
@@ -958,8 +1014,9 @@ func (s *Store) GetTimeSeries(ctx context.Context, p QueryParams) (TimeSeriesRes
 	return resp, nil
 }
 
-// GetAssets returns the enriched asset leaderboard with window, 24h, and 7d deltas.
-func (s *Store) GetAssets(ctx context.Context, p QueryParams, sortBy, sortDir string) ([]AssetRow, error) {
+// GetAssets returns the leaderboard either aggregated per logical item across deleted/replaced
+// versions (AssetModeItems) or as individual GitHub asset files (AssetModeFiles).
+func (s *Store) GetAssets(ctx context.Context, p QueryParams, mode AssetMode, sortBy, sortDir string) ([]AssetRow, error) {
 	whereSQL, whereArgs := buildAssetWhere(p, 1)
 	fromIdx := len(whereArgs) + 1
 	toIdx := len(whereArgs) + 2
@@ -976,65 +1033,142 @@ func (s *Store) GetAssets(ctx context.Context, p QueryParams, sortBy, sortDir st
 		orderCol = "last_24h_delta"
 	case "last_7d_delta":
 		orderCol = "last_7d_delta"
+	case "current_version_downloads":
+		orderCol = "current_version_downloads"
+	case "version_count":
+		orderCol = "version_count"
 	case "size_bytes":
-		orderCol = "a.size_bytes"
+		orderCol = "size_bytes"
 	case "display_title":
-		orderCol = "a.display_title"
+		orderCol = "display_title"
 	case "asset_updated_at":
-		orderCol = "a.asset_updated_at"
+		orderCol = "asset_updated_at"
 	}
 	dirSQL := "DESC"
 	if strings.EqualFold(sortDir, "asc") {
 		dirSQL = "ASC"
 	}
 
-	q := fmt.Sprintf(`
-		WITH filtered AS (
-			SELECT a.*
-			FROM euler_stats.assets a
-			WHERE %s
-		),
-		snap_agg AS (
+	var q string
+	if mode == AssetModeFiles {
+		q = fmt.Sprintf(`
+			WITH filtered AS (
+				SELECT a.*
+				FROM euler_stats.assets a
+				WHERE %s
+			),
+			snap_agg AS (
+				SELECT
+					s.asset_id,
+					COALESCE(SUM(CASE WHEN s.polled_at >= $%d AND s.polled_at <= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS window_delta,
+					COALESCE(SUM(CASE WHEN s.polled_at >= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS last_24h_delta,
+					COALESCE(SUM(CASE WHEN s.polled_at >= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS last_7d_delta
+				FROM euler_stats.asset_snapshots s
+				JOIN filtered f ON f.asset_id = s.asset_id
+				GROUP BY s.asset_id
+			)
 			SELECT
-				s.asset_id,
-				COALESCE(SUM(CASE WHEN s.polled_at >= $%d AND s.polled_at <= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS window_delta,
-				COALESCE(SUM(CASE WHEN s.polled_at >= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS last_24h_delta,
-				COALESCE(SUM(CASE WHEN s.polled_at >= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS last_7d_delta
-			FROM euler_stats.asset_snapshots s
-			JOIN filtered f ON f.asset_id = s.asset_id
-			GROUP BY s.asset_id
-		)
-		SELECT
-			a.asset_id,
-			a.release_tag,
-			a.release_name,
-			a.asset_name,
-			a.item_key,
-			a.display_title,
-			a.category,
-			a.subject,
-			a.language,
-			a.edition,
-			a.author,
-			a.license,
-			a.pages,
-			a.exercises,
-			a.included_in_app,
-			a.size_bytes,
-			a.download_url,
-			a.asset_created_at,
-			a.asset_updated_at,
-			a.first_seen_at,
-			a.last_seen_at,
-			a.is_active,
-			a.latest_download_count AS all_time_downloads,
-			COALESCE(sa.window_delta, 0)::bigint AS window_delta,
-			COALESCE(sa.last_24h_delta, 0)::bigint AS last_24h_delta,
-			COALESCE(sa.last_7d_delta, 0)::bigint AS last_7d_delta
-		FROM filtered a
-		LEFT JOIN snap_agg sa ON sa.asset_id = a.asset_id
-		ORDER BY %s %s NULLS LAST, a.display_title ASC
-	`, whereSQL, fromIdx, toIdx, h24Idx, d7Idx, orderCol, dirSQL)
+				a.asset_id,
+				a.release_tag,
+				a.release_name,
+				a.asset_name,
+				a.item_key,
+				a.display_title,
+				a.category,
+				a.subject,
+				a.language,
+				a.edition,
+				a.author,
+				a.license,
+				a.pages,
+				a.exercises,
+				a.included_in_app,
+				a.size_bytes,
+				a.download_url,
+				a.asset_created_at,
+				a.asset_updated_at,
+				a.first_seen_at,
+				a.last_seen_at,
+				a.is_active,
+				1::int AS version_count,
+				CASE WHEN a.is_active THEN a.latest_download_count ELSE 0 END AS current_version_downloads,
+				a.latest_download_count AS all_time_downloads,
+				COALESCE(sa.window_delta, 0)::bigint AS window_delta,
+				COALESCE(sa.last_24h_delta, 0)::bigint AS last_24h_delta,
+				COALESCE(sa.last_7d_delta, 0)::bigint AS last_7d_delta
+			FROM filtered a
+			LEFT JOIN snap_agg sa ON sa.asset_id = a.asset_id
+			ORDER BY %s %s NULLS LAST, display_title ASC
+		`, whereSQL, fromIdx, toIdx, h24Idx, d7Idx, orderCol, dirSQL)
+	} else {
+		q = fmt.Sprintf(`
+			WITH filtered AS (
+				SELECT a.*
+				FROM euler_stats.assets a
+				WHERE %s
+			),
+			snap_agg AS (
+				SELECT
+					s.asset_id,
+					COALESCE(SUM(CASE WHEN s.polled_at >= $%d AND s.polled_at <= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS window_delta,
+					COALESCE(SUM(CASE WHEN s.polled_at >= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS last_24h_delta,
+					COALESCE(SUM(CASE WHEN s.polled_at >= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS last_7d_delta
+				FROM euler_stats.asset_snapshots s
+				JOIN filtered f ON f.asset_id = s.asset_id
+				GROUP BY s.asset_id
+			),
+			ranked AS (
+				SELECT
+					a.*,
+					ROW_NUMBER() OVER (
+						PARTITION BY a.release_tag, a.item_key
+						ORDER BY a.is_active DESC, a.last_seen_at DESC, a.asset_updated_at DESC NULLS LAST, a.asset_id DESC
+					) AS rn
+				FROM filtered a
+			)
+			SELECT
+				rep.asset_id,
+				rep.release_tag,
+				rep.release_name,
+				rep.asset_name,
+				rep.item_key,
+				rep.display_title,
+				rep.category,
+				rep.subject,
+				rep.language,
+				rep.edition,
+				rep.author,
+				rep.license,
+				rep.pages,
+				rep.exercises,
+				rep.included_in_app,
+				rep.size_bytes,
+				rep.download_url,
+				rep.asset_created_at,
+				rep.asset_updated_at,
+				MIN(a.first_seen_at) AS first_seen_at,
+				MAX(a.last_seen_at) AS last_seen_at,
+				BOOL_OR(a.is_active) AS is_active,
+				COUNT(*)::int AS version_count,
+				COALESCE(SUM(CASE WHEN a.is_active THEN a.latest_download_count ELSE 0 END), 0)::bigint AS current_version_downloads,
+				COALESCE(SUM(a.latest_download_count), 0)::bigint AS all_time_downloads,
+				COALESCE(SUM(COALESCE(sa.window_delta, 0)), 0)::bigint AS window_delta,
+				COALESCE(SUM(COALESCE(sa.last_24h_delta, 0)), 0)::bigint AS last_24h_delta,
+				COALESCE(SUM(COALESCE(sa.last_7d_delta, 0)), 0)::bigint AS last_7d_delta
+			FROM filtered a
+			JOIN ranked rep
+			  ON rep.release_tag = a.release_tag
+			 AND rep.item_key = a.item_key
+			 AND rep.rn = 1
+			LEFT JOIN snap_agg sa ON sa.asset_id = a.asset_id
+			GROUP BY
+				rep.asset_id, rep.release_tag, rep.release_name, rep.asset_name, rep.item_key,
+				rep.display_title, rep.category, rep.subject, rep.language, rep.edition,
+				rep.author, rep.license, rep.pages, rep.exercises, rep.included_in_app,
+				rep.size_bytes, rep.download_url, rep.asset_created_at, rep.asset_updated_at
+			ORDER BY %s %s NULLS LAST, display_title ASC
+		`, whereSQL, fromIdx, toIdx, h24Idx, d7Idx, orderCol, dirSQL)
+	}
 
 	rows, err := s.Pool.Query(ctx, q, args...)
 	if err != nil {
@@ -1052,6 +1186,59 @@ func (s *Store) GetAssets(ctx context.Context, p QueryParams, sortBy, sortDir st
 			&r.Author, &r.License, &r.Pages, &r.Exercises, &r.IncludedInApp,
 			&r.SizeBytes, &r.DownloadURL, &r.AssetCreatedAt, &r.AssetUpdatedAt,
 			&r.FirstSeenAt, &r.LastSeenAt, &r.IsActive,
+			&r.VersionCount, &r.CurrentVersionDownloads,
+			&r.AllTimeDownloads, &r.WindowDelta, &r.Last24hDelta, &r.Last7dDelta,
+		); err != nil {
+			return nil, err
+		}
+		totalDownloads += r.AllTimeDownloads
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if totalDownloads > 0 {
+		for i := range out {
+			out[i].SharePct = round2((float64(out[i].AllTimeDownloads) / float64(totalDownloads)) * 100.0)
+		}
+	}
+	return out, nil
+}
+
+// GetItemVersions returns every observed GitHub asset version for a logical (release_tag, item_key).
+func (s *Store) GetItemVersions(ctx context.Context, releaseTag, itemKey string) ([]AssetRow, error) {
+	rows, err := s.Pool.Query(ctx, `
+		SELECT
+			a.asset_id, a.release_tag, a.release_name, a.asset_name, a.item_key,
+			a.display_title, a.category, a.subject, a.language, a.edition,
+			a.author, a.license, a.pages, a.exercises, a.included_in_app,
+			a.size_bytes, a.download_url, a.asset_created_at, a.asset_updated_at,
+			a.first_seen_at, a.last_seen_at, a.is_active,
+			1::int AS version_count,
+			CASE WHEN a.is_active THEN a.latest_download_count ELSE 0 END,
+			a.latest_download_count,
+			0::bigint, 0::bigint, 0::bigint
+		FROM euler_stats.assets a
+		WHERE a.release_tag = $1 AND a.item_key = $2
+		  AND (a.is_active OR a.latest_download_count > 0)
+		ORDER BY a.is_active DESC, a.last_seen_at DESC, a.asset_id DESC
+	`, releaseTag, itemKey)
+	if err != nil {
+		return nil, fmt.Errorf("get item versions: %w", err)
+	}
+	defer rows.Close()
+
+	var totalDownloads int64
+	out := []AssetRow{}
+	for rows.Next() {
+		var r AssetRow
+		if err := rows.Scan(
+			&r.AssetID, &r.ReleaseTag, &r.ReleaseName, &r.AssetName, &r.ItemKey,
+			&r.DisplayTitle, &r.Category, &r.Subject, &r.Language, &r.Edition,
+			&r.Author, &r.License, &r.Pages, &r.Exercises, &r.IncludedInApp,
+			&r.SizeBytes, &r.DownloadURL, &r.AssetCreatedAt, &r.AssetUpdatedAt,
+			&r.FirstSeenAt, &r.LastSeenAt, &r.IsActive,
+			&r.VersionCount, &r.CurrentVersionDownloads,
 			&r.AllTimeDownloads, &r.WindowDelta, &r.Last24hDelta, &r.Last7dDelta,
 		); err != nil {
 			return nil, err

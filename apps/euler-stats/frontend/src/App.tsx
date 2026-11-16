@@ -7,6 +7,7 @@ import {
   fetchTimeSeries,
 } from './lib/api';
 import type {
+  AssetMode,
   AssetRow,
   FilterState,
   Granularity,
@@ -40,6 +41,7 @@ function defaultTimezone(): string {
 export default function App() {
   const [tab, setTab] = useState<MainTab>('library');
   const [metric, setMetric] = useState<MetricMode>('delta');
+  const [assetMode, setAssetMode] = useState<AssetMode>('items');
   const [sort, setSort] = useState<SortField>('all_time_downloads');
   const [dir, setDir] = useState<'asc' | 'desc'>('desc');
   const [selectedAsset, setSelectedAsset] = useState<AssetRow | null>(null);
@@ -77,7 +79,7 @@ export default function App() {
     Promise.all([
       fetchOverview(filters, ac.signal),
       fetchTimeSeries(filters, undefined, ac.signal),
-      fetchAssets(filters, sort, dir, ac.signal),
+      fetchAssets(filters, assetMode, sort, dir, ac.signal),
     ])
       .then(([ov, series, assetList]) => {
         setOverview(ov);
@@ -92,7 +94,7 @@ export default function App() {
       .finally(() => setLoading(false));
 
     return () => ac.abort();
-  }, [filters, sort, dir, refreshTick]);
+  }, [filters, assetMode, sort, dir, refreshTick]);
 
   useEffect(() => {
     if (tab !== 'polls') return;
@@ -492,11 +494,13 @@ export default function App() {
 
                 <AssetTable
                   assets={assets}
+                  mode={assetMode}
+                  onChangeMode={setAssetMode}
                   sort={sort}
                   dir={dir}
                   onSort={handleSort}
                   onSelectAsset={setSelectedAsset}
-                  csvUrl={csvExportURL('assets', filters)}
+                  csvUrl={csvExportURL('assets', filters, assetMode)}
                 />
               </>
             )}
@@ -522,6 +526,7 @@ export default function App() {
       {selectedAsset && (
         <AssetDetailModal
           asset={selectedAsset}
+          mode={assetMode}
           filters={filters}
           firstPolledAt={firstPolledAt}
           onClose={() => setSelectedAsset(null)}

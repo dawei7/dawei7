@@ -32,7 +32,8 @@ type analyticsReader interface {
 	PollHistoryBounds(ctx context.Context) (*time.Time, *time.Time, error)
 	GetOverview(ctx context.Context, p db.QueryParams) (db.OverviewResponse, error)
 	GetTimeSeries(ctx context.Context, p db.QueryParams) (db.TimeSeriesResponse, error)
-	GetAssets(ctx context.Context, p db.QueryParams, sortBy, sortDir string) ([]db.AssetRow, error)
+	GetAssets(ctx context.Context, p db.QueryParams, mode db.AssetMode, sortBy, sortDir string) ([]db.AssetRow, error)
+	GetItemVersions(ctx context.Context, releaseTag, itemKey string) ([]db.AssetRow, error)
 	GetPollRuns(ctx context.Context, limit int) ([]db.PollRunRow, error)
 }
 
@@ -143,14 +144,39 @@ func newMux(store analyticsReader, collector pollRunner, adminSecret string) *ht
 			return
 		}
 		q := r.URL.Query()
-		rows, err := store.GetAssets(r.Context(), params, q.Get("sort"), q.Get("dir"))
+		mode, ok := db.ParseAssetMode(q.Get("mode"))
+		if !ok {
+			jsonError(w, "invalid mode (use items or files)", http.StatusBadRequest)
+			return
+		}
+		rows, err := store.GetAssets(r.Context(), params, mode, q.Get("sort"), q.Get("dir"))
 		if err != nil {
 			jsonError(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"assets": rows,
+			"mode":   mode,
 			"count":  len(rows),
+		})
+	})
+
+	mux.HandleFunc("GET /api/item-versions", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		releaseTag := strings.TrimSpace(q.Get("release"))
+		itemKey := strings.TrimSpace(q.Get("item_key"))
+		if releaseTag == "" || itemKey == "" {
+			jsonError(w, "release and item_key are required", http.StatusBadRequest)
+			return
+		}
+		rows, err := store.GetItemVersions(r.Context(), releaseTag, itemKey)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"versions": rows,
+			"count":    len(rows),
 		})
 	})
 
@@ -186,7 +212,13 @@ func newMux(store analyticsReader, collector pollRunner, adminSecret string) *ht
 			}
 			writeTimeSeriesCSV(w, ts)
 		case "assets":
-			rows, err := store.GetAssets(r.Context(), params, r.URL.Query().Get("sort"), r.URL.Query().Get("dir"))
+			q := r.URL.Query()
+			mode, ok := db.ParseAssetMode(q.Get("mode"))
+			if !ok {
+				jsonError(w, "invalid mode (use items or files)", http.StatusBadRequest)
+				return
+			}
+			rows, err := store.GetAssets(r.Context(), params, mode, q.Get("sort"), q.Get("dir"))
 			if err != nil {
 				jsonError(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -328,6 +360,7 @@ func parseQueryParams(r *http.Request, store analyticsReader) (db.QueryParams, s
 		Edition:     strings.TrimSpace(q.Get("edition")),
 		Search:      strings.TrimSpace(q.Get("q")),
 		AssetID:     assetID,
+		ItemKey:     strings.TrimSpace(q.Get("item_key")),
 	}, ""
 }
 
@@ -413,13 +446,15 @@ func writeAssetsCSV(w http.ResponseWriter, assets []db.AssetRow) {
 	w.Header().Set("Content-Disposition", `attachment; filename="euler-assets.csv"`)
 	cw := csv.NewWriter(w)
 	_ = cw.Write([]string{
-		"asset_id", "release_tag", "asset_name", "display_title", "category", "subject",
-		"language", "edition", "author", "size_bytes", "all_time_downloads",
+		"asset_id", "item_key", "release_tag", "asset_name", "display_title", "category", "subject",
+		"language", "edition", "author", "size_bytes", "version_count",
+		"current_version_downloads", "all_time_downloads",
 		"window_delta", "last_24h_delta", "last_7d_delta", "share_pct", "is_active",
 	})
 	for _, a := range assets {
 		_ = cw.Write([]string{
 			strconv.FormatInt(a.AssetID, 10),
+			a.ItemKey,
 			a.ReleaseTag,
 			a.AssetName,
 			a.DisplayTitle,
@@ -429,6 +464,8 @@ func writeAssetsCSV(w http.ResponseWriter, assets []db.AssetRow) {
 			a.Edition,
 			a.Author,
 			strconv.FormatInt(a.SizeBytes, 10),
+			strconv.Itoa(a.VersionCount),
+			strconv.FormatInt(a.CurrentVersionDownloads, 10),
 			strconv.FormatInt(a.AllTimeDownloads, 10),
 			strconv.FormatInt(a.WindowDelta, 10),
 			strconv.FormatInt(a.Last24hDelta, 10),

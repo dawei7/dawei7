@@ -83,4 +83,13 @@ func TestParseGranularityAndGroupBy(t *testing.T) {
 	if _, ok := ParseGroupBy("country"); ok {
 		t.Fatalf("expected unsupported group_by to fail")
 	}
+	if m, ok := ParseAssetMode(""); !ok || m != AssetModeItems {
+		t.Fatalf("expected default AssetModeItems, got %v %v", m, ok)
+	}
+	if m, ok := ParseAssetMode("files"); !ok || m != AssetModeFiles {
+		t.Fatalf("expected AssetModeFiles, got %v %v", m, ok)
+	}
+	if _, ok := ParseAssetMode("invalid"); ok {
+		t.Fatalf("expected invalid asset mode to fail")
+	}
 }

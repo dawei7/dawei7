@@ -1,4 +1,5 @@
 import type {
+  AssetMode,
   AssetRow,
   FilterState,
   OverviewResponse,
@@ -63,15 +64,26 @@ export function fetchTimeSeries(
 
 export async function fetchAssets(
   f: FilterState,
+  mode: AssetMode,
   sort: string,
   dir: 'asc' | 'desc',
   signal?: AbortSignal,
 ): Promise<AssetRow[]> {
   const data = await fetchJSON<{ assets: AssetRow[] }>(
-    `/api/assets?${buildQuery(f, { sort, dir })}`,
+    `/api/assets?${buildQuery(f, { mode, sort, dir })}`,
     signal,
   );
   return data.assets ?? [];
+}
+
+export async function fetchItemVersions(
+  releaseTag: string,
+  itemKey: string,
+  signal?: AbortSignal,
+): Promise<AssetRow[]> {
+  const params = new URLSearchParams({ release: releaseTag, item_key: itemKey });
+  const data = await fetchJSON<{ versions: AssetRow[] }>(`/api/item-versions?${params}`, signal);
+  return data.versions ?? [];
 }
 
 export async function fetchPolls(limit = 60, signal?: AbortSignal): Promise<PollRunRow[]> {
@@ -79,6 +91,10 @@ export async function fetchPolls(limit = 60, signal?: AbortSignal): Promise<Poll
   return data.polls ?? [];
 }
 
-export function csvExportURL(kind: 'timeseries' | 'assets', f: FilterState): string {
-  return `/api/export.csv?${buildQuery(f, { type: kind })}`;
+export function csvExportURL(
+  kind: 'timeseries' | 'assets',
+  f: FilterState,
+  mode: AssetMode = 'items',
+): string {
+  return `/api/export.csv?${buildQuery(f, { type: kind, mode })}`;
 }
