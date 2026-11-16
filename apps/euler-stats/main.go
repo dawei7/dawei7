@@ -21,6 +21,7 @@ import (
 
 	"github.com/dawei7/dawei7/apps/euler-stats/db"
 	"github.com/dawei7/dawei7/apps/euler-stats/github"
+	"github.com/dawei7/dawei7/apps/euler-stats/notify"
 	"github.com/dawei7/dawei7/apps/euler-stats/play"
 	"github.com/dawei7/dawei7/apps/euler-stats/poller"
 )
@@ -58,6 +59,12 @@ type playSyncRunner interface {
 	SyncOnce(ctx context.Context) (play.SyncResult, error)
 }
 
+type notificationManager interface {
+	GetOverview(ctx context.Context, limit int, adminProtected bool) (notify.NotificationStatusResponse, error)
+	UpdateSettings(ctx context.Context, upd db.NotificationSettingsUpdate) (db.NotificationSettings, error)
+	SendTest(ctx context.Context) (db.NotificationLogEntry, error)
+}
+
 type appConfig struct {
 	adminSecret string
 	playPackage string
@@ -84,11 +91,6 @@ func main() {
 	}
 
 	store := db.NewStore(pool)
-	ghClient := github.NewClient(os.Getenv("GITHUB_TOKEN"))
-	collector := poller.New(ghClient, store)
-
-	go collector.RunScheduler(rootCtx)
-
 	playPkg := strings.TrimSpace(os.Getenv("PLAY_PACKAGE_NAME"))
 	if playPkg == "" {
 		playPkg = defaultPlayPackage
@@ -98,6 +100,25 @@ func main() {
 		playBucket = defaultPlayBucket
 	}
 
+	mailer := notify.NewSMTPMailerFromEnv()
+	notifier := notify.NewService(store, mailer, playPkg, os.Getenv("NOTIFY_DASHBOARD_URL"))
+	adminSecret := os.Getenv("ADMIN_SECRET")
+
+	if ov, err := notifier.GetOverview(rootCtx, 1, adminSecret != ""); err != nil {
+		log.Printf("notifications initialization warning: %v", err)
+	} else {
+		log.Printf("notifications ready: recipient=%s smtp_configured=%v (%s:%s from %s)",
+			ov.Settings.RecipientEmail, ov.SMTP.Configured, ov.SMTP.Host, ov.SMTP.Port, ov.SMTP.Username)
+	}
+
+	ghClient := github.NewClient(os.Getenv("GITHUB_TOKEN"))
+	collector := poller.New(ghClient, store)
+	collector.SetOnPollSuccess(func(ctx context.Context, res poller.PollResult) {
+		notifier.CheckAndNotifyDownloads(ctx, res)
+	})
+
+	go collector.RunScheduler(rootCtx)
+
 	var playSyncer playSyncRunner
 	playEnabled := false
 	ts, err := play.LoadTokenSourceFromEnv()
@@ -106,6 +127,9 @@ func main() {
 	} else if ts != nil {
 		playClient := play.NewClient(ts, playBucket, playPkg)
 		ps := play.NewSyncer(playClient, store, playPkg)
+		ps.SetOnSyncSuccess(func(ctx context.Context, _ play.SyncResult) {
+			notifier.CheckAndNotifyPlayCrashes(ctx)
+		})
 		playSyncer = ps
 		playEnabled = true
 		go ps.RunScheduler(rootCtx)
@@ -115,11 +139,11 @@ func main() {
 	}
 
 	cfg := appConfig{
-		adminSecret: os.Getenv("ADMIN_SECRET"),
+		adminSecret: adminSecret,
 		playPackage: playPkg,
 		playEnabled: playEnabled,
 	}
-	mux := newMux(store, collector, playSyncer, cfg)
+	mux := newMux(store, collector, playSyncer, notifier, cfg)
 
 	srv := &http.Server{
 		Addr:              ":" + port,
@@ -143,7 +167,26 @@ func main() {
 	}
 }
 
-func newMux(store analyticsReader, collector pollRunner, playSyncer playSyncRunner, cfg appConfig) *http.ServeMux {
+func authorizeAdmin(w http.ResponseWriter, r *http.Request, adminSecret string) bool {
+	if adminSecret == "" {
+		jsonError(w, "admin endpoint disabled (ADMIN_SECRET not set)", http.StatusForbidden)
+		return false
+	}
+	token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+	if subtle.ConstantTimeCompare([]byte(token), []byte(adminSecret)) != 1 {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return false
+	}
+	return true
+}
+
+func newMux(
+	store analyticsReader,
+	collector pollRunner,
+	playSyncer playSyncRunner,
+	notifier notificationManager,
+	cfg appConfig,
+) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
@@ -282,13 +325,7 @@ func newMux(store analyticsReader, collector pollRunner, playSyncer playSyncRunn
 	})
 
 	mux.HandleFunc("POST /api/poll", func(w http.ResponseWriter, r *http.Request) {
-		if cfg.adminSecret == "" {
-			jsonError(w, "manual poll endpoint disabled (ADMIN_SECRET not set)", http.StatusForbidden)
-			return
-		}
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if subtle.ConstantTimeCompare([]byte(token), []byte(cfg.adminSecret)) != 1 {
-			jsonError(w, "unauthorized", http.StatusUnauthorized)
+		if !authorizeAdmin(w, r, cfg.adminSecret) {
 			return
 		}
 		if collector == nil {
@@ -403,13 +440,7 @@ func newMux(store analyticsReader, collector pollRunner, playSyncer playSyncRunn
 	})
 
 	mux.HandleFunc("POST /api/play/poll", func(w http.ResponseWriter, r *http.Request) {
-		if cfg.adminSecret == "" {
-			jsonError(w, "manual poll endpoint disabled (ADMIN_SECRET not set)", http.StatusForbidden)
-			return
-		}
-		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if subtle.ConstantTimeCompare([]byte(token), []byte(cfg.adminSecret)) != 1 {
-			jsonError(w, "unauthorized", http.StatusUnauthorized)
+		if !authorizeAdmin(w, r, cfg.adminSecret) {
 			return
 		}
 		if playSyncer == nil {
@@ -422,6 +453,62 @@ func newMux(store analyticsReader, collector pollRunner, playSyncer playSyncRunn
 			return
 		}
 		writeJSON(w, http.StatusOK, res)
+	})
+
+	// ── Email Notification Service Endpoints ─────────────────────────────────
+
+	mux.HandleFunc("GET /api/notifications", func(w http.ResponseWriter, r *http.Request) {
+		if notifier == nil {
+			jsonError(w, "notifications service unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		res, err := notifier.GetOverview(r.Context(), limit, cfg.adminSecret != "")
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, res)
+	})
+
+	mux.HandleFunc("PUT /api/notifications/settings", func(w http.ResponseWriter, r *http.Request) {
+		if !authorizeAdmin(w, r, cfg.adminSecret) {
+			return
+		}
+		if notifier == nil {
+			jsonError(w, "notifications service unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		var upd db.NotificationSettingsUpdate
+		if err := json.NewDecoder(r.Body).Decode(&upd); err != nil {
+			jsonError(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		updated, err := notifier.UpdateSettings(r.Context(), upd)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, http.StatusOK, updated)
+	})
+
+	mux.HandleFunc("POST /api/notifications/test", func(w http.ResponseWriter, r *http.Request) {
+		if !authorizeAdmin(w, r, cfg.adminSecret) {
+			return
+		}
+		if notifier == nil {
+			jsonError(w, "notifications service unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		entry, sendErr := notifier.SendTest(r.Context())
+		statusCode := http.StatusOK
+		if sendErr != nil && entry.Status == "error" {
+			statusCode = http.StatusBadGateway
+		}
+		writeJSON(w, statusCode, map[string]any{
+			"entry": entry,
+			"error": entry.ErrorMessage,
+		})
 	})
 
 	// Embedded React SPA + PWA static assets

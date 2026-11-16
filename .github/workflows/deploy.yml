@@ -26,6 +26,8 @@ jobs:
       - name: Pull latest config & restart stack
         env:
           PLAY_SERVICE_ACCOUNT_B64: ${{ secrets.PLAY_SERVICE_ACCOUNT_B64 }}
+          EULER_STATS_SMTP_PASSWORD: ${{ secrets.EULER_STATS_SMTP_PASSWORD }}
+          EULER_STATS_ADMIN_SECRET: ${{ secrets.EULER_STATS_ADMIN_SECRET }}
         run: |
           set -e
           cd /opt/server

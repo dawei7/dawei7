@@ -1,17 +1,40 @@
-import type { PlayPollRunRow, PlaySyncStatus, PollRunRow, PollerStatus } from '../lib/types';
+import type {
+  NotificationStatusResponse,
+  PlayPollRunRow,
+  PlaySyncStatus,
+  PollRunRow,
+  PollerStatus,
+} from '../lib/types';
 import { formatNumber, formatTimestamp } from '../lib/format';
+import { NotificationsCard } from './NotificationsCard';
 
 interface PollLogTabProps {
   polls: PollRunRow[];
   poller: PollerStatus | null;
   playPolls: PlayPollRunRow[];
   playSync: PlaySyncStatus | null;
+  notifications: NotificationStatusResponse | null;
+  onRefreshNotifications: () => void;
   tz: string;
 }
 
-export function PollLogTab({ polls, poller, playPolls, playSync, tz }: PollLogTabProps) {
+export function PollLogTab({
+  polls,
+  poller,
+  playPolls,
+  playSync,
+  notifications,
+  onRefreshNotifications,
+  tz,
+}: PollLogTabProps) {
   return (
     <div className="space-y-6">
+      <NotificationsCard
+        data={notifications}
+        tz={tz}
+        onRefresh={onRefreshNotifications}
+      />
+
       {/* Google Play Hourly Sync Log */}
       <div className="space-y-3">
         {playSync && (

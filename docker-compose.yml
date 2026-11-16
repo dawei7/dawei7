@@ -183,6 +183,13 @@ services:
       - PLAY_SERVICE_ACCOUNT_FILE=/secrets/play-service-account.json
       - PLAY_PACKAGE_NAME=com.mathn.tablet
       - PLAY_BUCKET_NAME=pubsite_prod_7498353165123168775
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USERNAME=${SMTP_USERNAME:-ai.professor.euler@gmail.com}
+      - SMTP_PASSWORD=${EULER_STATS_SMTP_PASSWORD:-}
+      - SMTP_FROM=${SMTP_FROM:-Professor Euler Stats <ai.professor.euler@gmail.com>}
+      - NOTIFY_RECIPIENT_EMAIL=${NOTIFY_RECIPIENT_EMAIL:-ai.professor.euler@gmail.com}
+      - NOTIFY_DASHBOARD_URL=https://euler-stats.dawei7.com
     volumes:
       - ./secrets:/secrets:ro
     depends_on:

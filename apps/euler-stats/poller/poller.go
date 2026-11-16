@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"sort"
 	"sync"
 	"time"
 
@@ -32,12 +33,13 @@ type Store interface {
 
 // Poller fetches GitHub Releases hourly and writes snapshot deltas to Postgres.
 type Poller struct {
-	fetcher  ReleaseFetcher
-	catalog  CatalogRefresher
-	store    Store
-	nowFn    func() time.Time
-	mu       sync.Mutex
-	staleAge time.Duration
+	fetcher       ReleaseFetcher
+	catalog       CatalogRefresher
+	store         Store
+	nowFn         func() time.Time
+	mu            sync.Mutex
+	staleAge      time.Duration
+	onPollSuccess func(context.Context, PollResult)
 }
 
 type clientCatalogAdapter struct {
@@ -60,6 +62,11 @@ func New(client *github.Client, store Store) *Poller {
 	}
 }
 
+// SetOnPollSuccess registers a hook invoked after every successful GitHub poll.
+func (p *Poller) SetOnPollSuccess(fn func(context.Context, PollResult)) {
+	p.onPollSuccess = fn
+}
+
 // NewWithDeps creates a Poller with custom dependencies (for testing).
 func NewWithDeps(fetcher ReleaseFetcher, catalog CatalogRefresher, store Store, nowFn func() time.Time) *Poller {
 	return &Poller{
@@ -71,15 +78,31 @@ func NewWithDeps(fetcher ReleaseFetcher, catalog CatalogRefresher, store Store, 
 	}
 }
 
+// AssetChange describes one asset whose download count increased in this poll.
+type AssetChange struct {
+	AssetID      int64  `json:"asset_id"`
+	ReleaseTag   string `json:"release_tag"`
+	AssetName    string `json:"asset_name"`
+	ItemKey      string `json:"item_key"`
+	DisplayTitle string `json:"display_title"`
+	Language     string `json:"language"`
+	Edition      string `json:"edition"`
+	PrevCount    int64  `json:"prev_count"`
+	CurrentCount int64  `json:"current_count"`
+	Delta        int64  `json:"delta"`
+}
+
 // PollResult summarizes a single poll execution.
 type PollResult struct {
-	PollRunID      int64 `json:"poll_run_id"`
-	ReleasesCount  int   `json:"releases_count"`
-	AssetsCount    int   `json:"assets_count"`
-	TotalDownloads int64 `json:"total_downloads"`
-	TotalDelta     int64 `json:"total_delta"`
-	IsBaseline     bool  `json:"is_baseline"`
-	DurationMs     int   `json:"duration_ms"`
+	PollRunID      int64         `json:"poll_run_id"`
+	PolledAt       time.Time     `json:"polled_at"`
+	ReleasesCount  int           `json:"releases_count"`
+	AssetsCount    int           `json:"assets_count"`
+	TotalDownloads int64         `json:"total_downloads"`
+	TotalDelta     int64         `json:"total_delta"`
+	IsBaseline     bool          `json:"is_baseline"`
+	DurationMs     int           `json:"duration_ms"`
+	ChangedAssets  []AssetChange `json:"changed_assets,omitempty"`
 }
 
 // PollOnce executes one fetch-enrich-diff-persist cycle.
@@ -132,6 +155,7 @@ func (p *Poller) PollOnce(ctx context.Context) (PollResult, error) {
 	isInitialBaseline := firstPolledAt == nil
 	var assets []db.AssetUpsert
 	var snapshots []db.SnapshotInsert
+	var changedAssets []AssetChange
 	var totalDownloads int64
 	var totalDelta int64
 	seenAssetIDs := make(map[int64]struct{})
@@ -162,6 +186,20 @@ func (p *Poller) PollOnce(ctx context.Context) (PollResult, error) {
 				isInitialBaseline,
 				firstPolledAt,
 			)
+			if !snapBaseline && delta > 0 {
+				changedAssets = append(changedAssets, AssetChange{
+					AssetID:      a.ID,
+					ReleaseTag:   rel.TagName,
+					AssetName:    a.Name,
+					ItemKey:      itemKey,
+					DisplayTitle: meta.DisplayTitle,
+					Language:     meta.Language,
+					Edition:      meta.Edition,
+					PrevCount:    prevCounts[a.ID],
+					CurrentCount: a.DownloadCount,
+					Delta:        delta,
+				})
+			}
 
 			assets = append(assets, db.AssetUpsert{
 				AssetID:             a.ID,
@@ -202,6 +240,13 @@ func (p *Poller) PollOnce(ctx context.Context) (PollResult, error) {
 		}
 	}
 
+	sort.Slice(changedAssets, func(i, j int) bool {
+		if changedAssets[i].Delta != changedAssets[j].Delta {
+			return changedAssets[i].Delta > changedAssets[j].Delta
+		}
+		return changedAssets[i].DisplayTitle < changedAssets[j].DisplayTitle
+	})
+
 	durMs := int(p.nowFn().Sub(started).Milliseconds())
 	runInput := db.PollRunInput{
 		PolledAt:           started,
@@ -221,15 +266,21 @@ func (p *Poller) PollOnce(ctx context.Context) (PollResult, error) {
 		return PollResult{}, err
 	}
 
-	return PollResult{
+	out := PollResult{
 		PollRunID:      runID,
+		PolledAt:       started,
 		ReleasesCount:  len(res.Releases),
 		AssetsCount:    len(assets),
 		TotalDownloads: totalDownloads,
 		TotalDelta:     totalDelta,
 		IsBaseline:     isInitialBaseline,
 		DurationMs:     durMs,
-	}, nil
+		ChangedAssets:  changedAssets,
+	}
+	if p.onPollSuccess != nil {
+		p.onPollSuccess(ctx, out)
+	}
+	return out, nil
 }
 
 func computeAssetDelta(

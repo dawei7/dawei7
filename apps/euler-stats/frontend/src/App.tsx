@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import {
   csvExportURL,
   fetchAssets,
+  fetchNotifications,
   fetchOverview,
   fetchPlayOverview,
   fetchPlayPolls,
@@ -15,6 +16,7 @@ import type {
   Granularity,
   GroupBy,
   MetricMode,
+  NotificationStatusResponse,
   OverviewResponse,
   PlayOverviewResponse,
   PlayPollRunRow,
@@ -72,6 +74,7 @@ export default function App() {
   const [polls, setPolls] = useState<PollRunRow[]>([]);
   const [playPolls, setPlayPolls] = useState<PlayPollRunRow[]>([]);
   const [playOverviewSummary, setPlayOverviewSummary] = useState<PlayOverviewResponse | null>(null);
+  const [notifications, setNotifications] = useState<NotificationStatusResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [refreshTick, setRefreshTick] = useState(0);
@@ -115,11 +118,13 @@ export default function App() {
       fetchPolls(80, ac.signal),
       fetchPlayPolls(80, ac.signal),
       fetchPlayOverview({ granularity: 'day', range: '30d', from: '', to: '', tz: filters.tz, country: '' }, ac.signal),
+      fetchNotifications(40, ac.signal),
     ])
-      .then(([ghPolls, pPolls, pOv]) => {
+      .then(([ghPolls, pPolls, pOv, notif]) => {
         setPolls(ghPolls);
         setPlayPolls(pPolls);
         setPlayOverviewSummary(pOv);
+        setNotifications(notif);
       })
       .catch(() => {});
     return () => ac.abort();
@@ -333,7 +338,7 @@ export default function App() {
               [
                 ['play', 'Google Play Store'],
                 ['library', 'Library & Curriculum Releases'],
-                ['polls', 'Hourly Collector Log'],
+                ['polls', 'Alerts & Collector Log'],
               ] as [MainTab, string][]
             ).map(([id, label]) => (
               <button
@@ -655,6 +660,8 @@ export default function App() {
             poller={overview?.poller ?? null}
             playPolls={playPolls}
             playSync={playOverviewSummary?.sync ?? null}
+            notifications={notifications}
+            onRefreshNotifications={() => setRefreshTick((n) => n + 1)}
             tz={filters.tz}
           />
         )}
@@ -679,7 +686,7 @@ export default function App() {
             [
               ['play', 'Play Store'],
               ['library', 'Library'],
-              ['polls', 'Collector'],
+              ['polls', 'Alerts & Log'],
             ] as [MainTab, string][]
           ).map(([id, label]) => {
             const active = tab === id;

@@ -75,6 +75,11 @@ var reportingSpecs = []metricSetSpec{
 		dimensions: []string{"reportType"},
 	},
 	{
+		name:       "errorCountMetricSet",
+		metrics:    []string{"errorReportCount", "distinctUsers"},
+		dimensions: []string{"reportType", "versionCode"},
+	},
+	{
 		name:    "crashRateMetricSet",
 		metrics: []string{"crashRate", "userPerceivedCrashRate", "distinctUsers"},
 	},

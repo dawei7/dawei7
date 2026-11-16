@@ -336,3 +336,53 @@ export interface PlayPollRunRow {
   vitals_rows_upserted: number;
   reviews_upserted: number;
 }
+
+export interface NotificationSettings {
+  enabled: boolean;
+  recipient_email: string;
+  crash_alerts_enabled: boolean;
+  crash_min_version_code: number;
+  include_anrs: boolean;
+  crash_since: string;
+  download_alerts_enabled: boolean;
+  min_download_delta: number;
+  updated_at: string;
+}
+
+export interface NotificationSettingsUpdate {
+  enabled: boolean;
+  recipient_email: string;
+  crash_alerts_enabled: boolean;
+  crash_min_version_code: number;
+  include_anrs: boolean;
+  download_alerts_enabled: boolean;
+  min_download_delta: number;
+  reset_crash_baseline: boolean;
+}
+
+export interface SMTPStatus {
+  configured: boolean;
+  host: string;
+  port: string;
+  username: string;
+  from: string;
+  default_recipient: string;
+}
+
+export interface NotificationLogEntry {
+  id: number;
+  created_at: string;
+  event_type: string;
+  recipient: string;
+  subject: string;
+  body_text: string;
+  status: string;
+  error_message: string;
+}
+
+export interface NotificationStatusResponse {
+  settings: NotificationSettings;
+  smtp: SMTPStatus;
+  admin_protected: boolean;
+  logs: NotificationLogEntry[];
+}

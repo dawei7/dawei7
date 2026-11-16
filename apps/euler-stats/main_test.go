@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/dawei7/dawei7/apps/euler-stats/db"
+	"github.com/dawei7/dawei7/apps/euler-stats/notify"
 	"github.com/dawei7/dawei7/apps/euler-stats/poller"
 )
 
@@ -121,10 +123,49 @@ func (f *fakePollRunner) PollOnce(context.Context) (poller.PollResult, error) {
 	return poller.PollResult{PollRunID: 42, TotalDownloads: 509}, nil
 }
 
+type fakeNotifier struct {
+	settings db.NotificationSettings
+	testSent bool
+}
+
+func (f *fakeNotifier) GetOverview(_ context.Context, _ int, adminProtected bool) (notify.NotificationStatusResponse, error) {
+	return notify.NotificationStatusResponse{
+		Settings: f.settings,
+		SMTP: notify.SMTPStatus{
+			Configured:  true,
+			Host:        "smtp.gmail.com",
+			Port:        "587",
+			Username:    notify.DefaultGmailAddress,
+			DefaultDest: notify.DefaultGmailAddress,
+		},
+		AdminProtected: adminProtected,
+		Logs:           []db.NotificationLogEntry{},
+	}, nil
+}
+
+func (f *fakeNotifier) UpdateSettings(_ context.Context, upd db.NotificationSettingsUpdate) (db.NotificationSettings, error) {
+	f.settings.Enabled = upd.Enabled
+	f.settings.RecipientEmail = upd.RecipientEmail
+	f.settings.CrashAlertsEnabled = upd.CrashAlertsEnabled
+	f.settings.CrashMinVersionCode = upd.CrashMinVersionCode
+	f.settings.IncludeANRs = upd.IncludeANRs
+	f.settings.DownloadAlertsEnabled = upd.DownloadAlertsEnabled
+	f.settings.MinDownloadDelta = upd.MinDownloadDelta
+	return f.settings, nil
+}
+
+func (f *fakeNotifier) SendTest(context.Context) (db.NotificationLogEntry, error) {
+	f.testSent = true
+	return db.NotificationLogEntry{ID: 1, EventType: "test", Status: "sent", Recipient: f.settings.RecipientEmail}, nil
+}
+
 func TestHandlersValidationCSVAndAdminAuth(t *testing.T) {
 	reader := &fakeAnalyticsReader{}
 	runner := &fakePollRunner{}
-	mux := newMux(reader, runner, nil, appConfig{
+	notifier := &fakeNotifier{settings: db.NotificationSettings{
+		Enabled: true, RecipientEmail: notify.DefaultGmailAddress, MinDownloadDelta: 1,
+	}}
+	mux := newMux(reader, runner, nil, notifier, appConfig{
 		adminSecret: "top-secret",
 		playPackage: "com.mathn.tablet",
 		playEnabled: true,
@@ -212,6 +253,38 @@ func TestHandlersValidationCSVAndAdminAuth(t *testing.T) {
 	mux.ServeHTTP(recPlayCSV, reqPlayCSV)
 	if recPlayCSV.Code != http.StatusOK || !strings.Contains(recPlayCSV.Body.String(), "device_installs,device_uninstalls") {
 		t.Fatalf("unexpected play CSV response (%d): %s", recPlayCSV.Code, recPlayCSV.Body.String())
+	}
+
+	// 7. Notifications endpoints
+	reqNotifGet := httptest.NewRequest(http.MethodGet, "/api/notifications", nil)
+	recNotifGet := httptest.NewRecorder()
+	mux.ServeHTTP(recNotifGet, reqNotifGet)
+	if recNotifGet.Code != http.StatusOK || !strings.Contains(recNotifGet.Body.String(), notify.DefaultGmailAddress) {
+		t.Fatalf("unexpected GET /api/notifications response (%d): %s", recNotifGet.Code, recNotifGet.Body.String())
+	}
+
+	reqNotifUnauth := httptest.NewRequest(http.MethodPost, "/api/notifications/test", nil)
+	recNotifUnauth := httptest.NewRecorder()
+	mux.ServeHTTP(recNotifUnauth, reqNotifUnauth)
+	if recNotifUnauth.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 on unauthenticated POST /api/notifications/test, got %d", recNotifUnauth.Code)
+	}
+
+	bodyUpd := bytes.NewBufferString(`{"enabled":true,"recipient_email":"test@example.com","crash_alerts_enabled":true,"crash_min_version_code":60,"include_anrs":true,"download_alerts_enabled":true,"min_download_delta":2}`)
+	reqNotifUpd := httptest.NewRequest(http.MethodPut, "/api/notifications/settings", bodyUpd)
+	reqNotifUpd.Header.Set("Authorization", "Bearer top-secret")
+	recNotifUpd := httptest.NewRecorder()
+	mux.ServeHTTP(recNotifUpd, reqNotifUpd)
+	if recNotifUpd.Code != http.StatusOK || notifier.settings.RecipientEmail != "test@example.com" || notifier.settings.CrashMinVersionCode != 60 {
+		t.Fatalf("unexpected PUT /api/notifications/settings (%d): %s", recNotifUpd.Code, recNotifUpd.Body.String())
+	}
+
+	reqNotifTest := httptest.NewRequest(http.MethodPost, "/api/notifications/test", nil)
+	reqNotifTest.Header.Set("Authorization", "Bearer top-secret")
+	recNotifTest := httptest.NewRecorder()
+	mux.ServeHTTP(recNotifTest, reqNotifTest)
+	if recNotifTest.Code != http.StatusOK || !notifier.testSent {
+		t.Fatalf("expected 200 and testSent on POST /api/notifications/test (%d): %s", recNotifTest.Code, recNotifTest.Body.String())
 	}
 }
 

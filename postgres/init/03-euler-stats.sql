@@ -209,3 +209,41 @@ CREATE TABLE IF NOT EXISTS euler_stats.play_poll_runs (
 
 CREATE INDEX IF NOT EXISTS idx_play_poll_runs_polled_at
     ON euler_stats.play_poll_runs (polled_at DESC);
+
+-- ─── NOTIFICATION SERVICE TABLES ─────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS euler_stats.notification_settings (
+    id                      SMALLINT    PRIMARY KEY CHECK (id = 1),
+    enabled                 BOOLEAN     NOT NULL DEFAULT TRUE,
+    recipient_email         TEXT        NOT NULL DEFAULT 'ai.professor.euler@gmail.com',
+    crash_alerts_enabled    BOOLEAN     NOT NULL DEFAULT TRUE,
+    crash_min_version_code  BIGINT      NOT NULL DEFAULT 0,
+    include_anrs            BOOLEAN     NOT NULL DEFAULT FALSE,
+    crash_since             TIMESTAMPTZ NOT NULL DEFAULT date_trunc('day', now() AT TIME ZONE 'UTC'),
+    download_alerts_enabled BOOLEAN     NOT NULL DEFAULT TRUE,
+    min_download_delta      BIGINT      NOT NULL DEFAULT 1,
+    updated_at              TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO euler_stats.notification_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS euler_stats.crash_alert_state (
+    state_key  TEXT        PRIMARY KEY,
+    last_count BIGINT      NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS euler_stats.notification_log (
+    id            BIGSERIAL   PRIMARY KEY,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    event_type    TEXT        NOT NULL,
+    recipient     TEXT        NOT NULL,
+    subject       TEXT        NOT NULL,
+    body_text     TEXT        NOT NULL,
+    status        TEXT        NOT NULL CHECK (status IN ('sent', 'skipped', 'error')),
+    error_message TEXT        NOT NULL DEFAULT '',
+    metadata_json JSONB       NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX IF NOT EXISTS idx_euler_notification_log_created
+    ON euler_stats.notification_log (created_at DESC, id DESC);

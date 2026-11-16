@@ -3,6 +3,10 @@ import type {
   AssetRow,
   FilterState,
   Granularity,
+  NotificationSettings,
+  NotificationSettingsUpdate,
+  NotificationStatusResponse,
+  NotificationLogEntry,
   OverviewResponse,
   PlayOverviewResponse,
   PlayPollRunRow,
@@ -168,4 +172,43 @@ export async function fetchPlayPolls(limit = 60, signal?: AbortSignal): Promise<
 
 export function playCsvExportURL(kind: 'timeseries' | 'countries', f: PlayFilterState): string {
   return `/api/play/export.csv?${buildPlayQuery(f, { type: kind })}`;
+}
+
+export function fetchNotifications(limit = 40, signal?: AbortSignal): Promise<NotificationStatusResponse> {
+  return fetchJSON<NotificationStatusResponse>(`/api/notifications?limit=${limit}`, signal);
+}
+
+export async function updateNotificationSettings(
+  upd: NotificationSettingsUpdate,
+  adminToken: string,
+): Promise<NotificationSettings> {
+  const res = await fetch('/api/notifications/settings', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${adminToken.trim()}`,
+    },
+    body: JSON.stringify(upd),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(body.error || `Request failed (${res.status})`);
+  }
+  return res.json() as Promise<NotificationSettings>;
+}
+
+export async function sendTestNotification(
+  adminToken: string,
+): Promise<{ entry: NotificationLogEntry; error?: string }> {
+  const res = await fetch('/api/notifications/test', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${adminToken.trim()}`,
+    },
+  });
+  const body = await res.json().catch(() => ({ error: res.statusText }));
+  if (!res.ok && !body.entry) {
+    throw new Error(body.error || `Request failed (${res.status})`);
+  }
+  return body as { entry: NotificationLogEntry; error?: string };
 }

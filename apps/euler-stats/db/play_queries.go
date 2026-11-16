@@ -347,7 +347,8 @@ func (s *Store) GetPlayOverview(
 	_ = s.Pool.QueryRow(ctx, `
 		SELECT COALESCE(SUM((metrics_json->>'errorReportCount')::double precision), 0)::bigint
 		FROM euler_stats.play_vitals_timeseries
-		WHERE package_name = $1 AND metric_set = 'errorCountMetricSet' AND aggregation_period = 'HOURLY'
+		WHERE package_name = $1 AND metric_set = 'errorCountMetricSet'
+		  AND aggregation_period = 'HOURLY' AND dimension_key = 'reportType'
 	`, pkgName).Scan(&out.Totals.HourlyErrorsTotal)
 
 	// Tracks.
@@ -655,7 +656,8 @@ func (s *Store) GetPlayTimeSeries(
 				COALESCE((metrics_json->>'errorReportCount')::double precision, 0)::bigint,
 				COALESCE((metrics_json->>'distinctUsers')::double precision, 0)::bigint
 			FROM euler_stats.play_vitals_timeseries
-			WHERE package_name = $1 AND metric_set = 'errorCountMetricSet' AND aggregation_period = 'HOURLY'
+			WHERE package_name = $1 AND metric_set = 'errorCountMetricSet'
+			  AND aggregation_period = 'HOURLY' AND dimension_key = 'reportType'
 			  AND bucket_start >= $2 AND bucket_start <= $3
 		`, pkgName, alignedFrom, to)
 		if err != nil {

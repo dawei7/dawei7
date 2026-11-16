@@ -30,12 +30,13 @@ type SyncStore interface {
 
 // Syncer polls Google Play Store reports and hourly vitals without duplicating rows.
 type Syncer struct {
-	fetcher     PlayFetcher
-	store       SyncStore
-	packageName string
-	nowFn       func() time.Time
-	mu          sync.Mutex
-	staleAge    time.Duration
+	fetcher       PlayFetcher
+	store         SyncStore
+	packageName   string
+	nowFn         func() time.Time
+	mu            sync.Mutex
+	staleAge      time.Duration
+	onSyncSuccess func(context.Context, SyncResult)
 }
 
 // NewSyncer creates a Syncer using the provided Play client and Postgres store.
@@ -47,6 +48,11 @@ func NewSyncer(fetcher PlayFetcher, store SyncStore, packageName string) *Syncer
 		nowFn:       func() time.Time { return time.Now().UTC() },
 		staleAge:    55 * time.Minute,
 	}
+}
+
+// SetOnSyncSuccess registers a hook invoked after every successful Play Store sync.
+func (s *Syncer) SetOnSyncSuccess(fn func(context.Context, SyncResult)) {
+	s.onSyncSuccess = fn
 }
 
 // SyncResult summarizes one Play Store sync execution.
@@ -172,7 +178,7 @@ func (s *Syncer) SyncOnce(ctx context.Context) (SyncResult, error) {
 		return SyncResult{}, err
 	}
 
-	return SyncResult{
+	res := SyncResult{
 		PollRunID:            runID,
 		GCSObjectsSeen:       len(objects),
 		GCSObjectsDownloaded: downloaded,
@@ -180,7 +186,11 @@ func (s *Syncer) SyncOnce(ctx context.Context) (SyncResult, error) {
 		VitalsRowsUpserted:   len(batch.Vitals),
 		ReviewsUpserted:      len(batch.Reviews),
 		DurationMs:           durMs,
-	}, nil
+	}
+	if s.onSyncSuccess != nil {
+		s.onSyncSuccess(ctx, res)
+	}
+	return res, nil
 }
 
 func (s *Syncer) recordError(ctx context.Context, started time.Time, err error) {
