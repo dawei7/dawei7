@@ -239,7 +239,7 @@ type PollRunRow struct {
 
 // buildAssetWhere builds parameterized SQL conditions on alias `a`.
 func buildAssetWhere(p QueryParams, startIdx int) (string, []any) {
-	var conds []string
+	conds := []string{"(a.is_active OR a.latest_download_count > 0)"}
 	var args []any
 	idx := startIdx
 

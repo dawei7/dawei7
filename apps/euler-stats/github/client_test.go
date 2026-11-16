@@ -40,7 +40,8 @@ func TestFetchAllReleasesPaginatesReleasesAndAssets(t *testing.T) {
 			return
 		}
 		_ = json.NewEncoder(w).Encode([]Asset{
-			{ID: 102, Name: "alg1_wb1_phone-bfe83743.mcbundle", DownloadCount: 4},
+			{ID: 102, Name: "alg1_wb1_phone-bfe83743.mcbundle", State: "uploaded", DownloadCount: 4},
+			{ID: 103, Name: "alg1_wb1_phone-deadbeef.mcbundle", State: "starter", DownloadCount: 0},
 		})
 	})
 	mux.HandleFunc("GET /repos/dawei7/professor-euler-library/releases/2/assets", func(w http.ResponseWriter, r *http.Request) {

@@ -124,7 +124,12 @@ func (c *Client) FetchAllReleases(ctx context.Context) (FetchResult, error) {
 				return result, fmt.Errorf("fetch assets for release %s (%d): %w", releases[i].TagName, releases[i].ID, err)
 			}
 			result.RateLimit = rl
-			allAssets = append(allAssets, page...)
+			for _, a := range page {
+				if a.State != "" && a.State != "uploaded" {
+					continue
+				}
+				allAssets = append(allAssets, a)
+			}
 			nextAssetURL = next
 		}
 		releases[i].Assets = allAssets
