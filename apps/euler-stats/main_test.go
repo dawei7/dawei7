@@ -74,6 +74,45 @@ func (f *fakeAnalyticsReader) GetPollRuns(context.Context, int) ([]db.PollRunRow
 	return []db.PollRunRow{{ID: 1, Status: "ok"}}, nil
 }
 
+func (f *fakeAnalyticsReader) PlayDateBounds(context.Context) (*time.Time, *time.Time, error) {
+	t := time.Date(2026, 9, 25, 0, 0, 0, 0, time.UTC)
+	return &t, &t, nil
+}
+
+func (f *fakeAnalyticsReader) GetPlayOverview(_ context.Context, pkgName string, _, _ time.Time, _ string, enabled bool) (db.PlayOverviewResponse, error) {
+	var ov db.PlayOverviewResponse
+	ov.Sync.PackageName = pkgName
+	ov.Sync.Enabled = enabled
+	ov.Totals.DeviceInstalls = 42
+	return ov, nil
+}
+
+func (f *fakeAnalyticsReader) GetPlayTimeSeries(_ context.Context, _ string, gran db.Granularity, _, _ time.Time, _ *time.Location, tzName, country string) (db.PlayTimeSeriesResponse, error) {
+	return db.PlayTimeSeriesResponse{
+		Granularity: gran,
+		Timezone:    tzName,
+		Country:     country,
+		Points: []db.PlayTimeSeriesPoint{{
+			Timestamp:      time.Date(2026, 11, 9, 11, 0, 0, 0, time.UTC),
+			Label:          "Nov 09 11:00",
+			DeviceInstalls: 3,
+			Crashes:        5,
+		}},
+	}, nil
+}
+
+func (f *fakeAnalyticsReader) GetPlayReviews(context.Context, string, int) ([]db.PlayReviewView, error) {
+	return []db.PlayReviewView{{ReviewKey: "r1", StarRating: 5}}, nil
+}
+
+func (f *fakeAnalyticsReader) GetPlayVitals(context.Context, string, int) ([]db.PlayVitalsSummaryRow, error) {
+	return []db.PlayVitalsSummaryRow{{MetricSet: "errorCountMetricSet", AggregationPeriod: "HOURLY"}}, nil
+}
+
+func (f *fakeAnalyticsReader) GetPlayPollRuns(context.Context, int) ([]db.PlayPollRunRow, error) {
+	return []db.PlayPollRunRow{{ID: 1, Status: "ok"}}, nil
+}
+
 type fakePollRunner struct{ called bool }
 
 func (f *fakePollRunner) PollOnce(context.Context) (poller.PollResult, error) {
@@ -84,7 +123,11 @@ func (f *fakePollRunner) PollOnce(context.Context) (poller.PollResult, error) {
 func TestHandlersValidationCSVAndAdminAuth(t *testing.T) {
 	reader := &fakeAnalyticsReader{}
 	runner := &fakePollRunner{}
-	mux := newMux(reader, runner, "top-secret")
+	mux := newMux(reader, runner, nil, appConfig{
+		adminSecret: "top-secret",
+		playPackage: "com.mathn.tablet",
+		playEnabled: true,
+	})
 
 	// 1. Valid timeseries JSON
 	req := httptest.NewRequest(http.MethodGet, "/api/timeseries?granularity=hour&group_by=release&tz=Europe/Zurich", nil)
@@ -146,5 +189,27 @@ func TestHandlersValidationCSVAndAdminAuth(t *testing.T) {
 	mux.ServeHTTP(recTSItem, reqTSItem)
 	if recTSItem.Code != http.StatusOK || reader.lastParams.ItemKey != "alg1_wb1" {
 		t.Fatalf("expected item_key parsed into QueryParams, got %+v", reader.lastParams)
+	}
+
+	// 6. Play Store endpoints
+	reqPlayOv := httptest.NewRequest(http.MethodGet, "/api/play/overview?range=all", nil)
+	recPlayOv := httptest.NewRecorder()
+	mux.ServeHTTP(recPlayOv, reqPlayOv)
+	if recPlayOv.Code != http.StatusOK || !strings.Contains(recPlayOv.Body.String(), `"device_installs":42`) {
+		t.Fatalf("unexpected play overview response (%d): %s", recPlayOv.Code, recPlayOv.Body.String())
+	}
+
+	reqPlayTS := httptest.NewRequest(http.MethodGet, "/api/play/timeseries?granularity=hour&tz=Europe/Zurich", nil)
+	recPlayTS := httptest.NewRecorder()
+	mux.ServeHTTP(recPlayTS, reqPlayTS)
+	if recPlayTS.Code != http.StatusOK || !strings.Contains(recPlayTS.Body.String(), `"crashes":5`) {
+		t.Fatalf("unexpected play timeseries response (%d): %s", recPlayTS.Code, recPlayTS.Body.String())
+	}
+
+	reqPlayCSV := httptest.NewRequest(http.MethodGet, "/api/play/export.csv?type=timeseries", nil)
+	recPlayCSV := httptest.NewRecorder()
+	mux.ServeHTTP(recPlayCSV, reqPlayCSV)
+	if recPlayCSV.Code != http.StatusOK || !strings.Contains(recPlayCSV.Body.String(), "device_installs,device_uninstalls") {
+		t.Fatalf("unexpected play CSV response (%d): %s", recPlayCSV.Code, recPlayCSV.Body.String())
 	}
 }

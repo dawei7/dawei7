@@ -180,6 +180,11 @@ services:
       - DATABASE_URL=postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${POSTGRES_DB}?sslmode=disable
       - GITHUB_TOKEN=${GITHUB_TOKEN:-}
       - ADMIN_SECRET=${EULER_STATS_ADMIN_SECRET:-}
+      - PLAY_SERVICE_ACCOUNT_FILE=/secrets/play-service-account.json
+      - PLAY_PACKAGE_NAME=com.mathn.tablet
+      - PLAY_BUCKET_NAME=pubsite_prod_7498353165123168775
+    volumes:
+      - ./secrets:/secrets:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -3,6 +3,8 @@ import {
   csvExportURL,
   fetchAssets,
   fetchOverview,
+  fetchPlayOverview,
+  fetchPlayPolls,
   fetchPolls,
   fetchTimeSeries,
 } from './lib/api';
@@ -14,6 +16,8 @@ import type {
   GroupBy,
   MetricMode,
   OverviewResponse,
+  PlayOverviewResponse,
+  PlayPollRunRow,
   PollRunRow,
   RangePreset,
   TimeSeriesResponse,
@@ -26,9 +30,9 @@ import { BreakdownsGrid } from './components/BreakdownsGrid';
 import { AssetTable, type SortField } from './components/AssetTable';
 import { AssetDetailModal } from './components/AssetDetailModal';
 import { PollLogTab } from './components/PollLogTab';
-import { RoadmapTab } from './components/RoadmapTab';
+import { GooglePlayTab } from './components/GooglePlayTab';
 
-type MainTab = 'library' | 'polls' | 'roadmap';
+type MainTab = 'play' | 'library' | 'polls';
 
 function defaultTimezone(): string {
   try {
@@ -39,7 +43,7 @@ function defaultTimezone(): string {
 }
 
 export default function App() {
-  const [tab, setTab] = useState<MainTab>('library');
+  const [tab, setTab] = useState<MainTab>('play');
   const [metric, setMetric] = useState<MetricMode>('delta');
   const [assetMode, setAssetMode] = useState<AssetMode>('items');
   const [sort, setSort] = useState<SortField>('all_time_downloads');
@@ -65,13 +69,16 @@ export default function App() {
   const [ts, setTs] = useState<TimeSeriesResponse | null>(null);
   const [assets, setAssets] = useState<AssetRow[]>([]);
   const [polls, setPolls] = useState<PollRunRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [playPolls, setPlayPolls] = useState<PlayPollRunRow[]>([]);
+  const [playOverviewSummary, setPlayOverviewSummary] = useState<PlayOverviewResponse | null>(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [refreshTick, setRefreshTick] = useState(0);
 
   const firstPolledAt = overview?.poller.first_polled_at ?? null;
 
   useEffect(() => {
+    if (tab !== 'library' && tab !== 'polls') return;
     const ac = new AbortController();
     setLoading(true);
     setError('');
@@ -94,16 +101,24 @@ export default function App() {
       .finally(() => setLoading(false));
 
     return () => ac.abort();
-  }, [filters, assetMode, sort, dir, refreshTick]);
+  }, [tab, filters, assetMode, sort, dir, refreshTick]);
 
   useEffect(() => {
     if (tab !== 'polls') return;
     const ac = new AbortController();
-    fetchPolls(80, ac.signal)
-      .then(setPolls)
+    Promise.all([
+      fetchPolls(80, ac.signal),
+      fetchPlayPolls(80, ac.signal),
+      fetchPlayOverview({ granularity: 'day', range: '30d', from: '', to: '', tz: filters.tz, country: '' }, ac.signal),
+    ])
+      .then(([ghPolls, pPolls, pOv]) => {
+        setPolls(ghPolls);
+        setPlayPolls(pPolls);
+        setPlayOverviewSummary(pOv);
+      })
       .catch(() => {});
     return () => ac.abort();
-  }, [tab, refreshTick]);
+  }, [tab, filters.tz, refreshTick]);
 
   // Auto-refresh UI every 5 minutes so newly completed top-of-hour polls appear automatically.
   useEffect(() => {
@@ -185,7 +200,16 @@ export default function App() {
               </span>
             </div>
             <p className="text-xs text-[#6e6558] mt-0.5">
-              Live release download analytics for{' '}
+              Android app telemetry via{' '}
+              <a
+                href="https://play.google.com/store/apps/details?id=com.mathn.tablet"
+                target="_blank"
+                rel="noreferrer"
+                className="text-[#1e4636] underline hover:text-[#143028]"
+              >
+                Google Play (com.mathn.tablet)
+              </a>{' '}
+              &amp;{' '}
               <a
                 href="https://github.com/dawei7/professor-euler-library/releases"
                 target="_blank"
@@ -214,7 +238,7 @@ export default function App() {
                     overview.poller.status === 'ok' ? 'bg-[#1e4636]' : 'bg-[#8d6b32]'
                   }`}
                 />
-                Last poll {formatRelativeTime(overview.poller.last_polled_at)}
+                GitHub {formatRelativeTime(overview.poller.last_polled_at)}
               </span>
             )}
             <button
@@ -229,12 +253,12 @@ export default function App() {
 
         {/* Navigation Tabs */}
         <nav className="flex flex-wrap items-center justify-between gap-3 py-4">
-          <div className="inline-flex rounded-full border border-[#d5cdb8] bg-[#fffcf6]/80 p-1 text-xs">
+          <div className="inline-flex flex-wrap rounded-full border border-[#d5cdb8] bg-[#fffcf6]/80 p-1 text-xs">
             {(
               [
-                ['library', 'Library & Curriculum Downloads'],
+                ['play', 'Google Play Store'],
+                ['library', 'Library & Curriculum Releases'],
                 ['polls', 'Hourly Collector Log'],
-                ['roadmap', 'Countries & App Roadmap'],
               ] as [MainTab, string][]
             ).map(([id, label]) => (
               <button
@@ -264,10 +288,18 @@ export default function App() {
           )}
         </nav>
 
-        {error && (
+        {error && tab !== 'play' && (
           <div className="mb-4 rounded-xl border border-[#a4513a]/40 bg-[#a4513a]/10 px-4 py-3 text-sm text-[#a4513a]">
             {error}
           </div>
+        )}
+
+        {tab === 'play' && (
+          <GooglePlayTab
+            defaultTz={defaultTimezone()}
+            tzOptions={tzOptions}
+            refreshTick={refreshTick}
+          />
         )}
 
         {tab === 'library' && (
@@ -508,17 +540,21 @@ export default function App() {
         )}
 
         {tab === 'polls' && (
-          <PollLogTab polls={polls} poller={overview?.poller ?? null} tz={filters.tz} />
+          <PollLogTab
+            polls={polls}
+            poller={overview?.poller ?? null}
+            playPolls={playPolls}
+            playSync={playOverviewSummary?.sync ?? null}
+            tz={filters.tz}
+          />
         )}
-
-        {tab === 'roadmap' && <RoadmapTab />}
       </div>
 
       <footer className="border-t border-[#d5cdb8] py-5 text-xs text-[#6e6558]">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-wrap justify-between gap-2">
           <span>Professor Euler Statistics · euler-stats.dawei7.com</span>
           <span>
-            Polled hourly from GitHub Releases · Stored in PostgreSQL · Zero user telemetry
+            Polled hourly from Google Play &amp; GitHub Releases · Stored in PostgreSQL
           </span>
         </div>
       </footer>

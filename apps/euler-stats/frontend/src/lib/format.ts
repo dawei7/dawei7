@@ -109,3 +109,24 @@ export function editionLabel(edition: string): string {
       return edition;
   }
 }
+
+let regionFormatter: Intl.DisplayNames | null = null;
+export function countryName(code: string): string {
+  const clean = code.trim().toUpperCase();
+  if (!clean) return 'Unknown';
+  if (clean === 'OTHER') return 'Other / Rest';
+  if (clean.length === 2) {
+    try {
+      if (!regionFormatter && typeof Intl !== 'undefined' && 'DisplayNames' in Intl) {
+        regionFormatter = new Intl.DisplayNames(['en'], { type: 'region' });
+      }
+      const label = regionFormatter?.of(clean);
+      if (label && label !== clean) {
+        return `${label} (${clean})`;
+      }
+    } catch {
+      // fall back to code
+    }
+  }
+  return code;
+}

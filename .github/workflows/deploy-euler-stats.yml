@@ -64,9 +64,15 @@ jobs:
       - name: Pull & restart
         env:
           IMAGE: ${{ env.IMAGE }}
+          PLAY_SERVICE_ACCOUNT_B64: ${{ secrets.PLAY_SERVICE_ACCOUNT_B64 }}
         run: |
           set -e
           cd /opt/server
+          mkdir -p /opt/server/secrets
+          if [ -n "$PLAY_SERVICE_ACCOUNT_B64" ]; then
+            printf '%s' "$PLAY_SERVICE_ACCOUNT_B64" | base64 -d > /opt/server/secrets/play-service-account.json
+            chmod 600 /opt/server/secrets/play-service-account.json
+          fi
           docker compose pull euler-stats
           docker compose up -d --no-deps euler-stats
           docker image prune -f

@@ -2,8 +2,15 @@ import type {
   AssetMode,
   AssetRow,
   FilterState,
+  Granularity,
   OverviewResponse,
+  PlayOverviewResponse,
+  PlayPollRunRow,
+  PlayReviewView,
+  PlayTimeSeriesResponse,
+  PlayVitalsSummaryRow,
   PollRunRow,
+  RangePreset,
   TimeSeriesResponse,
 } from './types';
 
@@ -97,4 +104,68 @@ export function csvExportURL(
   mode: AssetMode = 'items',
 ): string {
   return `/api/export.csv?${buildQuery(f, { type: kind, mode })}`;
+}
+
+export interface PlayFilterState {
+  granularity: Granularity;
+  range: RangePreset;
+  from: string;
+  to: string;
+  tz: string;
+  country: string;
+}
+
+function buildPlayQuery(
+  f: PlayFilterState,
+  extra?: Record<string, string | undefined>,
+): string {
+  const params = new URLSearchParams();
+  params.set('granularity', f.granularity);
+  params.set('tz', f.tz);
+  if (f.range === 'custom') {
+    if (f.from) params.set('from', f.from);
+    if (f.to) params.set('to', f.to);
+  } else {
+    params.set('range', f.range);
+  }
+  if (f.country) params.set('country', f.country);
+  if (extra) {
+    for (const [k, v] of Object.entries(extra)) {
+      if (v) params.set(k, v);
+    }
+  }
+  return params.toString();
+}
+
+export function fetchPlayOverview(
+  f: PlayFilterState,
+  signal?: AbortSignal,
+): Promise<PlayOverviewResponse> {
+  return fetchJSON<PlayOverviewResponse>(`/api/play/overview?${buildPlayQuery(f)}`, signal);
+}
+
+export function fetchPlayTimeSeries(
+  f: PlayFilterState,
+  signal?: AbortSignal,
+): Promise<PlayTimeSeriesResponse> {
+  return fetchJSON<PlayTimeSeriesResponse>(`/api/play/timeseries?${buildPlayQuery(f)}`, signal);
+}
+
+export async function fetchPlayReviews(limit = 200, signal?: AbortSignal): Promise<PlayReviewView[]> {
+  const data = await fetchJSON<{ reviews: PlayReviewView[] }>(`/api/play/reviews?limit=${limit}`, signal);
+  return data.reviews ?? [];
+}
+
+export async function fetchPlayVitals(limit = 150, signal?: AbortSignal): Promise<PlayVitalsSummaryRow[]> {
+  const data = await fetchJSON<{ vitals: PlayVitalsSummaryRow[] }>(`/api/play/vitals?limit=${limit}`, signal);
+  return data.vitals ?? [];
+}
+
+export async function fetchPlayPolls(limit = 60, signal?: AbortSignal): Promise<PlayPollRunRow[]> {
+  const data = await fetchJSON<{ polls: PlayPollRunRow[] }>(`/api/play/polls?limit=${limit}`, signal);
+  return data.polls ?? [];
+}
+
+export function playCsvExportURL(kind: 'timeseries' | 'countries', f: PlayFilterState): string {
+  return `/api/play/export.csv?${buildPlayQuery(f, { type: kind })}`;
 }

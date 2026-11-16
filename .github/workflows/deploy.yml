@@ -24,6 +24,8 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       - name: Pull latest config & restart stack
+        env:
+          PLAY_SERVICE_ACCOUNT_B64: ${{ secrets.PLAY_SERVICE_ACCOUNT_B64 }}
         run: |
           set -e
           cd /opt/server
@@ -31,6 +33,12 @@ jobs:
           echo "Pulling latest config..."
           git fetch origin main
           git reset --hard origin/main
+
+          mkdir -p /opt/server/secrets
+          if [ -n "$PLAY_SERVICE_ACCOUNT_B64" ]; then
+            printf '%s' "$PLAY_SERVICE_ACCOUNT_B64" | base64 -d > /opt/server/secrets/play-service-account.json
+            chmod 600 /opt/server/secrets/play-service-account.json
+          fi
 
           echo "Pulling latest images..."
           docker compose pull --ignore-buildable || echo "WARNING: some images failed to pull, continuing with cached versions"

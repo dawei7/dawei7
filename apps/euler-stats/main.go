@@ -21,7 +21,13 @@ import (
 
 	"github.com/dawei7/dawei7/apps/euler-stats/db"
 	"github.com/dawei7/dawei7/apps/euler-stats/github"
+	"github.com/dawei7/dawei7/apps/euler-stats/play"
 	"github.com/dawei7/dawei7/apps/euler-stats/poller"
+)
+
+const (
+	defaultPlayPackage = "com.mathn.tablet"
+	defaultPlayBucket  = "pubsite_prod_7498353165123168775"
 )
 
 //go:embed all:frontend/dist
@@ -35,10 +41,27 @@ type analyticsReader interface {
 	GetAssets(ctx context.Context, p db.QueryParams, mode db.AssetMode, sortBy, sortDir string) ([]db.AssetRow, error)
 	GetItemVersions(ctx context.Context, releaseTag, itemKey string) ([]db.AssetRow, error)
 	GetPollRuns(ctx context.Context, limit int) ([]db.PollRunRow, error)
+
+	PlayDateBounds(ctx context.Context) (*time.Time, *time.Time, error)
+	GetPlayOverview(ctx context.Context, pkgName string, fromDate, toDate time.Time, country string, playEnabled bool) (db.PlayOverviewResponse, error)
+	GetPlayTimeSeries(ctx context.Context, pkgName string, gran db.Granularity, from, to time.Time, loc *time.Location, tzName, country string) (db.PlayTimeSeriesResponse, error)
+	GetPlayReviews(ctx context.Context, pkgName string, limit int) ([]db.PlayReviewView, error)
+	GetPlayVitals(ctx context.Context, pkgName string, limit int) ([]db.PlayVitalsSummaryRow, error)
+	GetPlayPollRuns(ctx context.Context, limit int) ([]db.PlayPollRunRow, error)
 }
 
 type pollRunner interface {
 	PollOnce(ctx context.Context) (poller.PollResult, error)
+}
+
+type playSyncRunner interface {
+	SyncOnce(ctx context.Context) (play.SyncResult, error)
+}
+
+type appConfig struct {
+	adminSecret string
+	playPackage string
+	playEnabled bool
 }
 
 func main() {
@@ -66,8 +89,37 @@ func main() {
 
 	go collector.RunScheduler(rootCtx)
 
-	adminSecret := os.Getenv("ADMIN_SECRET")
-	mux := newMux(store, collector, adminSecret)
+	playPkg := strings.TrimSpace(os.Getenv("PLAY_PACKAGE_NAME"))
+	if playPkg == "" {
+		playPkg = defaultPlayPackage
+	}
+	playBucket := strings.TrimSpace(os.Getenv("PLAY_BUCKET_NAME"))
+	if playBucket == "" {
+		playBucket = defaultPlayBucket
+	}
+
+	var playSyncer playSyncRunner
+	playEnabled := false
+	ts, err := play.LoadTokenSourceFromEnv()
+	if err != nil {
+		log.Printf("Google Play service account configuration error: %v", err)
+	} else if ts != nil {
+		playClient := play.NewClient(ts, playBucket, playPkg)
+		ps := play.NewSyncer(playClient, store, playPkg)
+		playSyncer = ps
+		playEnabled = true
+		go ps.RunScheduler(rootCtx)
+		log.Printf("Google Play hourly syncer enabled for %s (bucket %s)", playPkg, playBucket)
+	} else {
+		log.Printf("Google Play sync disabled (no service account configured)")
+	}
+
+	cfg := appConfig{
+		adminSecret: os.Getenv("ADMIN_SECRET"),
+		playPackage: playPkg,
+		playEnabled: playEnabled,
+	}
+	mux := newMux(store, collector, playSyncer, cfg)
 
 	srv := &http.Server{
 		Addr:              ":" + port,
@@ -91,7 +143,7 @@ func main() {
 	}
 }
 
-func newMux(store analyticsReader, collector pollRunner, adminSecret string) *http.ServeMux {
+func newMux(store analyticsReader, collector pollRunner, playSyncer playSyncRunner, cfg appConfig) *http.ServeMux {
 	mux := http.NewServeMux()
 
 	healthHandler := func(w http.ResponseWriter, r *http.Request) {
@@ -230,12 +282,12 @@ func newMux(store analyticsReader, collector pollRunner, adminSecret string) *ht
 	})
 
 	mux.HandleFunc("POST /api/poll", func(w http.ResponseWriter, r *http.Request) {
-		if adminSecret == "" {
+		if cfg.adminSecret == "" {
 			jsonError(w, "manual poll endpoint disabled (ADMIN_SECRET not set)", http.StatusForbidden)
 			return
 		}
 		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		if subtle.ConstantTimeCompare([]byte(token), []byte(adminSecret)) != 1 {
+		if subtle.ConstantTimeCompare([]byte(token), []byte(cfg.adminSecret)) != 1 {
 			jsonError(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
@@ -244,6 +296,127 @@ func newMux(store analyticsReader, collector pollRunner, adminSecret string) *ht
 			return
 		}
 		res, err := collector.PollOnce(r.Context())
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, http.StatusOK, res)
+	})
+
+	// ── Google Play Store Endpoints ──────────────────────────────────────────
+
+	mux.HandleFunc("GET /api/play/overview", func(w http.ResponseWriter, r *http.Request) {
+		params, country, errMsg := parsePlayQueryParams(r, store)
+		if errMsg != "" {
+			jsonError(w, errMsg, http.StatusBadRequest)
+			return
+		}
+		res, err := store.GetPlayOverview(r.Context(), cfg.playPackage, params.From, params.To, country, cfg.playEnabled)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, res)
+	})
+
+	mux.HandleFunc("GET /api/play/timeseries", func(w http.ResponseWriter, r *http.Request) {
+		params, country, errMsg := parsePlayQueryParams(r, store)
+		if errMsg != "" {
+			jsonError(w, errMsg, http.StatusBadRequest)
+			return
+		}
+		res, err := store.GetPlayTimeSeries(r.Context(), cfg.playPackage, params.Granularity, params.From, params.To, params.Loc, params.TZName, country)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, res)
+	})
+
+	mux.HandleFunc("GET /api/play/reviews", func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		rows, err := store.GetPlayReviews(r.Context(), cfg.playPackage, limit)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"reviews": rows,
+			"count":   len(rows),
+		})
+	})
+
+	mux.HandleFunc("GET /api/play/vitals", func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		rows, err := store.GetPlayVitals(r.Context(), cfg.playPackage, limit)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"vitals": rows,
+			"count":  len(rows),
+		})
+	})
+
+	mux.HandleFunc("GET /api/play/polls", func(w http.ResponseWriter, r *http.Request) {
+		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		rows, err := store.GetPlayPollRuns(r.Context(), limit)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"polls": rows,
+			"count": len(rows),
+		})
+	})
+
+	mux.HandleFunc("GET /api/play/export.csv", func(w http.ResponseWriter, r *http.Request) {
+		params, country, errMsg := parsePlayQueryParams(r, store)
+		if errMsg != "" {
+			jsonError(w, errMsg, http.StatusBadRequest)
+			return
+		}
+		kind := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("type")))
+		if kind == "" {
+			kind = "timeseries"
+		}
+		switch kind {
+		case "timeseries":
+			ts, err := store.GetPlayTimeSeries(r.Context(), cfg.playPackage, params.Granularity, params.From, params.To, params.Loc, params.TZName, country)
+			if err != nil {
+				jsonError(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writePlayTimeSeriesCSV(w, ts)
+		case "countries":
+			ov, err := store.GetPlayOverview(r.Context(), cfg.playPackage, params.From, params.To, "", cfg.playEnabled)
+			if err != nil {
+				jsonError(w, err.Error(), http.StatusInternalServerError)
+				return
+			}
+			writePlayCountriesCSV(w, ov.ByCountry)
+		default:
+			jsonError(w, "invalid export type (use timeseries or countries)", http.StatusBadRequest)
+		}
+	})
+
+	mux.HandleFunc("POST /api/play/poll", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.adminSecret == "" {
+			jsonError(w, "manual poll endpoint disabled (ADMIN_SECRET not set)", http.StatusForbidden)
+			return
+		}
+		token := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if subtle.ConstantTimeCompare([]byte(token), []byte(cfg.adminSecret)) != 1 {
+			jsonError(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		if playSyncer == nil {
+			jsonError(w, "Google Play syncer disabled", http.StatusServiceUnavailable)
+			return
+		}
+		res, err := playSyncer.SyncOnce(r.Context())
 		if err != nil {
 			jsonError(w, err.Error(), http.StatusBadGateway)
 			return
@@ -488,4 +661,120 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func jsonError(w http.ResponseWriter, msg string, status int) {
 	writeJSON(w, status, map[string]string{"error": msg})
+}
+
+func parsePlayQueryParams(r *http.Request, store analyticsReader) (db.QueryParams, string, string) {
+	q := r.URL.Query()
+	gran, ok := db.ParseGranularity(q.Get("granularity"))
+	if !ok {
+		return db.QueryParams{}, "", "invalid granularity"
+	}
+	tzName := strings.TrimSpace(q.Get("tz"))
+	if tzName == "" {
+		tzName = "Europe/Zurich"
+	}
+	loc, err := time.LoadLocation(tzName)
+	if err != nil {
+		return db.QueryParams{}, "", fmt.Sprintf("invalid tz: %s", tzName)
+	}
+
+	now := time.Now().UTC()
+	to := now
+	if toRaw := strings.TrimSpace(q.Get("to")); toRaw != "" {
+		parsed, err := parseFlexibleTime(toRaw, loc, true)
+		if err != nil {
+			return db.QueryParams{}, "", "invalid to timestamp"
+		}
+		to = parsed
+	}
+
+	from := to.Add(-30 * 24 * time.Hour)
+	if gran == db.GranularityHour {
+		from = to.Add(-7 * 24 * time.Hour)
+	}
+	if fromRaw := strings.TrimSpace(q.Get("from")); fromRaw != "" {
+		parsed, err := parseFlexibleTime(fromRaw, loc, false)
+		if err != nil {
+			return db.QueryParams{}, "", "invalid from timestamp"
+		}
+		from = parsed
+	} else if rangeRaw := strings.TrimSpace(q.Get("range")); rangeRaw != "" {
+		if strings.EqualFold(rangeRaw, "all") {
+			if minD, _, err := store.PlayDateBounds(r.Context()); err == nil && minD != nil && !minD.After(to) {
+				from = *minD
+			} else {
+				from = to.Add(-180 * 24 * time.Hour)
+			}
+		} else if d, ok := parseRangePreset(rangeRaw); ok {
+			from = to.Add(-d)
+		}
+	}
+
+	if to.Before(from) {
+		return db.QueryParams{}, "", "to must be >= from"
+	}
+
+	return db.QueryParams{
+		From:        from,
+		To:          to,
+		TZName:      tzName,
+		Loc:         loc,
+		Granularity: gran,
+	}, strings.TrimSpace(q.Get("country")), ""
+}
+
+func writePlayTimeSeriesCSV(w http.ResponseWriter, ts db.PlayTimeSeriesResponse) {
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="euler-play-%s.csv"`, ts.Granularity))
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{
+		"timestamp", "label", "device_installs", "device_uninstalls", "user_installs", "user_uninstalls",
+		"active_devices", "install_events", "update_events", "store_visitors", "store_acquisitions",
+		"conversion_rate_pct", "daily_avg_rating", "total_avg_rating", "crashes", "anrs", "distinct_users",
+	})
+	for _, p := range ts.Points {
+		dRat, tRat := "", ""
+		if p.DailyAvgRating != nil {
+			dRat = fmt.Sprintf("%.2f", *p.DailyAvgRating)
+		}
+		if p.TotalAvgRating != nil {
+			tRat = fmt.Sprintf("%.2f", *p.TotalAvgRating)
+		}
+		_ = cw.Write([]string{
+			p.Timestamp.Format(time.RFC3339), p.Label,
+			strconv.FormatInt(p.DeviceInstalls, 10), strconv.FormatInt(p.DeviceUninstalls, 10),
+			strconv.FormatInt(p.UserInstalls, 10), strconv.FormatInt(p.UserUninstalls, 10),
+			strconv.FormatInt(p.ActiveDevices, 10), strconv.FormatInt(p.InstallEvents, 10),
+			strconv.FormatInt(p.UpdateEvents, 10), strconv.FormatInt(p.StoreVisitors, 10),
+			strconv.FormatInt(p.StoreAcquisitions, 10), fmt.Sprintf("%.2f", p.ConversionRate),
+			dRat, tRat, strconv.FormatInt(p.Crashes, 10), strconv.FormatInt(p.ANRs, 10),
+			strconv.FormatInt(p.DistinctUsers, 10),
+		})
+	}
+	cw.Flush()
+}
+
+func writePlayCountriesCSV(w http.ResponseWriter, rows []db.PlayDimensionRow) {
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="euler-play-countries.csv"`)
+	cw := csv.NewWriter(w)
+	_ = cw.Write([]string{
+		"country", "device_installs", "device_uninstalls", "user_installs", "active_devices",
+		"store_visitors", "store_acquisitions", "conversion_rate_pct", "avg_rating", "crashes", "anrs",
+	})
+	for _, r := range rows {
+		rat := ""
+		if r.AvgRating != nil {
+			rat = fmt.Sprintf("%.2f", *r.AvgRating)
+		}
+		_ = cw.Write([]string{
+			r.DimensionValue,
+			strconv.FormatInt(r.DeviceInstalls, 10), strconv.FormatInt(r.DeviceUninstalls, 10),
+			strconv.FormatInt(r.UserInstalls, 10), strconv.FormatInt(r.ActiveDevices, 10),
+			strconv.FormatInt(r.StoreVisitors, 10), strconv.FormatInt(r.StoreAcquisitions, 10),
+			fmt.Sprintf("%.2f", r.ConversionRate), rat,
+			strconv.FormatInt(r.Crashes, 10), strconv.FormatInt(r.ANRs, 10),
+		})
+	}
+	cw.Flush()
 }
