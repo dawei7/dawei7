@@ -1,0 +1,35 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --paper: #f3eee4;
+    --paper-deep: #e7e0d2;
+    --card: rgba(255, 252, 246, 0.86);
+    --ink: #1c1914;
+    --ink-soft: #4a4338;
+    --ink-muted: #6e6558;
+    --green: #1e4636;
+    --green-deep: #143028;
+    --gold: #8d6b32;
+    --teal: #2b6b74;
+    --line: #d5cdb8;
+    color-scheme: light;
+  }
+
+  body {
+    margin: 0;
+    color: var(--ink);
+    background: radial-gradient(ellipse at top, #faf7f1 0%, var(--paper) 45%, #ebe4d6 100%);
+    min-height: 100vh;
+    font-family: "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, .font-serif-euler {
+    font-family: Palatino, "Palatino Linotype", "Iowan Old Style", Georgia, serif;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums;
+  }
+}
