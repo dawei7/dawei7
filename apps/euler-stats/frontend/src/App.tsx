@@ -31,6 +31,7 @@ import { AssetTable, type SortField } from './components/AssetTable';
 import { AssetDetailModal } from './components/AssetDetailModal';
 import { PollLogTab } from './components/PollLogTab';
 import { GooglePlayTab } from './components/GooglePlayTab';
+import { useInstallPrompt } from './lib/useInstallPrompt';
 
 type MainTab = 'play' | 'library' | 'polls';
 
@@ -74,6 +75,10 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [refreshTick, setRefreshTick] = useState(0);
+  const { canInstall, showIOSTip, promptInstall } = useInstallPrompt();
+  const [installDismissed, setInstallDismissed] = useState(false);
+  const [iosTipDismissed, setIosTipDismissed] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const firstPolledAt = overview?.poller.first_polled_at ?? null;
 
@@ -135,6 +140,14 @@ export default function App() {
       filters.search.trim(),
   );
 
+  const activeDropdownFilterCount = [
+    filters.release,
+    filters.category,
+    filters.subject,
+    filters.language,
+    filters.edition,
+  ].filter(Boolean).length;
+
   const tzOptions = useMemo(() => {
     const local = defaultTimezone();
     const list = [local, 'Europe/Zurich', 'UTC', 'America/New_York', 'Asia/Tokyo'];
@@ -185,54 +198,72 @@ export default function App() {
     }));
   };
 
+  const switchTab = (next: MainTab) => {
+    setTab(next);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   return (
     <div className="min-h-screen flex flex-col">
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 flex-1 pb-12">
+      <div className="mx-auto w-full max-w-7xl px-3.5 sm:px-6 lg:px-8 flex-1 pb-24 md:pb-12">
         {/* Header */}
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[#d5cdb8] py-5">
-          <div>
-            <div className="flex items-center gap-3">
-              <span className="font-serif-euler text-2xl text-[#1c1914] tracking-tight">
-                Professor Euler · Statistics
+        <header className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 border-b border-[#d5cdb8] py-3.5 sm:py-5 safe-pt">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2.5">
+              <span className="font-serif-euler text-xl sm:text-2xl text-[#1c1914] tracking-tight truncate">
+                Professor Euler · <span className="sm:hidden">Stats</span>
+                <span className="hidden sm:inline">Statistics</span>
               </span>
               <span className="hidden sm:inline-block rounded-full border border-[#d5cdb8] bg-[#fffcf6] px-2.5 py-0.5 text-xs font-serif-euler text-[#1e4636]">
                 e<sup>iπ</sup> + 1 = 0
               </span>
             </div>
-            <p className="text-xs text-[#6e6558] mt-0.5">
-              Android app telemetry via{' '}
-              <a
-                href="https://play.google.com/store/apps/details?id=com.mathn.tablet"
-                target="_blank"
-                rel="noreferrer"
-                className="text-[#1e4636] underline hover:text-[#143028]"
-              >
-                Google Play (com.mathn.tablet)
-              </a>{' '}
-              &amp;{' '}
-              <a
-                href="https://github.com/dawei7/professor-euler-library/releases"
-                target="_blank"
-                rel="noreferrer"
-                className="text-[#1e4636] underline hover:text-[#143028]"
-              >
-                dawei7/professor-euler-library
-              </a>{' '}
-              ·{' '}
-              <a
-                href="https://euler.dawei7.com"
-                target="_blank"
-                rel="noreferrer"
-                className="text-[#1e4636] underline hover:text-[#143028]"
-              >
-                euler.dawei7.com
-              </a>
+            <p className="text-[11px] sm:text-xs text-[#6e6558] mt-0.5 truncate sm:whitespace-normal">
+              <span className="sm:hidden">Google Play &amp; Library Analytics</span>
+              <span className="hidden sm:inline">
+                Android app telemetry via{' '}
+                <a
+                  href="https://play.google.com/store/apps/details?id=com.mathn.tablet"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[#1e4636] underline hover:text-[#143028]"
+                >
+                  Google Play (com.mathn.tablet)
+                </a>{' '}
+                &amp;{' '}
+                <a
+                  href="https://github.com/dawei7/professor-euler-library/releases"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[#1e4636] underline hover:text-[#143028]"
+                >
+                  dawei7/professor-euler-library
+                </a>{' '}
+                ·{' '}
+                <a
+                  href="https://euler.dawei7.com"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[#1e4636] underline hover:text-[#143028]"
+                >
+                  euler.dawei7.com
+                </a>
+              </span>
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex items-center gap-2 shrink-0">
+            {canInstall && (
+              <button
+                type="button"
+                onClick={() => void promptInstall()}
+                className="rounded-full bg-[#1e4636] px-3 py-1.5 sm:py-1 text-xs font-medium text-[#faf7f1] hover:bg-[#143028] transition-colors cursor-pointer"
+              >
+                Install App
+              </button>
+            )}
             {overview && (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-[#d5cdb8] bg-[#fffcf6] px-3 py-1 text-xs text-[#4a4338]">
+              <span className="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-[#d5cdb8] bg-[#fffcf6] px-3 py-1 text-xs text-[#4a4338]">
                 <span
                   className={`h-2 w-2 rounded-full ${
                     overview.poller.status === 'ok' ? 'bg-[#1e4636]' : 'bg-[#8d6b32]'
@@ -244,15 +275,59 @@ export default function App() {
             <button
               type="button"
               onClick={() => setRefreshTick((n) => n + 1)}
-              className="rounded-full border border-[#d5cdb8] bg-[#fffcf6] px-3 py-1 text-xs font-medium text-[#1c1914] hover:border-[#1e4636] transition-colors cursor-pointer"
+              className="rounded-full border border-[#d5cdb8] bg-[#fffcf6] px-3 py-1.5 sm:py-1 text-xs font-medium text-[#1c1914] hover:border-[#1e4636] transition-colors cursor-pointer"
             >
-              Refresh View
+              <span className="sm:hidden">Refresh</span>
+              <span className="hidden sm:inline">Refresh View</span>
             </button>
           </div>
         </header>
 
-        {/* Navigation Tabs */}
-        <nav className="flex flex-wrap items-center justify-between gap-3 py-4">
+        {/* Mobile Install Prompts (Android Chromium or iOS Safari) */}
+        {canInstall && !installDismissed && (
+          <div className="mt-3 sm:hidden rounded-xl border border-[#1e4636]/30 bg-[#1e4636]/10 px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs">
+            <span className="text-[#1c1914]">
+              <strong>Install Euler Stats</strong> on your home screen for full-screen mobile viewing.
+            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => void promptInstall()}
+                className="rounded-full bg-[#1e4636] px-3 py-1 font-medium text-[#faf7f1]"
+              >
+                Install
+              </button>
+              <button
+                type="button"
+                onClick={() => setInstallDismissed(true)}
+                aria-label="Dismiss install hint"
+                className="px-1.5 py-1 text-[#6e6558]"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+
+        {showIOSTip && !iosTipDismissed && (
+          <div className="mt-3 rounded-xl border border-[#8d6b32]/35 bg-[#8d6b32]/10 px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs text-[#4a4338]">
+            <span>
+              <strong>Install on iPhone/iPad:</strong> tap <strong>Share</strong> in Safari, then choose{' '}
+              <strong>&ldquo;Add to Home Screen&rdquo;</strong>.
+            </span>
+            <button
+              type="button"
+              onClick={() => setIosTipDismissed(true)}
+              aria-label="Dismiss iOS install hint"
+              className="px-1.5 py-1 text-[#6e6558] shrink-0"
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {/* Desktop & Tablet Navigation Tabs */}
+        <nav className="hidden md:flex flex-wrap items-center justify-between gap-3 py-4">
           <div className="inline-flex flex-wrap rounded-full border border-[#d5cdb8] bg-[#fffcf6]/80 p-1 text-xs">
             {(
               [
@@ -264,7 +339,7 @@ export default function App() {
               <button
                 key={id}
                 type="button"
-                onClick={() => setTab(id)}
+                onClick={() => switchTab(id)}
                 className={`rounded-full px-4 py-1.5 cursor-pointer transition-colors ${
                   tab === id
                     ? 'bg-[#1e4636] text-[#faf7f1] font-medium'
@@ -288,6 +363,8 @@ export default function App() {
           )}
         </nav>
 
+        <div className="md:hidden h-3" />
+
         {error && tab !== 'play' && (
           <div className="mb-4 rounded-xl border border-[#a4513a]/40 bg-[#a4513a]/10 px-4 py-3 text-sm text-[#a4513a]">
             {error}
@@ -303,16 +380,16 @@ export default function App() {
         )}
 
         {tab === 'library' && (
-          <div className="space-y-5">
+          <div className="space-y-4 sm:space-y-5">
             {/* Granularity & Filter Bar */}
-            <div className="rounded-2xl border border-[#d5cdb8] bg-[#fffcf6]/85 p-4 shadow-xs space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="rounded-2xl border border-[#d5cdb8] bg-[#fffcf6]/85 p-3.5 sm:p-4 shadow-xs space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-3">
                 {/* Granularity */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] uppercase tracking-wider text-[#6e6558] font-medium mr-1">
+                <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
+                  <span className="text-[11px] uppercase tracking-wider text-[#6e6558] font-medium shrink-0">
                     Granularity
                   </span>
-                  <div className="inline-flex rounded-full border border-[#d5cdb8] bg-[#f3eee4] p-0.5 text-xs">
+                  <div className="inline-flex overflow-x-auto no-scrollbar max-w-full rounded-full border border-[#d5cdb8] bg-[#f3eee4] p-0.5 text-xs">
                     {(
                       [
                         ['hour', 'Hourly'],
@@ -326,7 +403,7 @@ export default function App() {
                         key={g}
                         type="button"
                         onClick={() => handleGranularity(g)}
-                        className={`rounded-full px-3 py-1 cursor-pointer transition-colors ${
+                        className={`whitespace-nowrap shrink-0 rounded-full px-3 py-1.5 sm:py-1 cursor-pointer transition-colors ${
                           filters.granularity === g
                             ? 'bg-[#1e4636] text-[#faf7f1] font-medium'
                             : 'text-[#4a4338] hover:text-[#1c1914]'
@@ -339,17 +416,17 @@ export default function App() {
                 </div>
 
                 {/* Window Presets */}
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[11px] uppercase tracking-wider text-[#6e6558] font-medium mr-1">
+                <div className="flex items-center gap-2 w-full sm:w-auto min-w-0">
+                  <span className="text-[11px] uppercase tracking-wider text-[#6e6558] font-medium shrink-0">
                     Window
                   </span>
-                  <div className="inline-flex rounded-full border border-[#d5cdb8] bg-[#f3eee4] p-0.5 text-xs">
+                  <div className="inline-flex overflow-x-auto no-scrollbar max-w-full rounded-full border border-[#d5cdb8] bg-[#f3eee4] p-0.5 text-xs">
                     {(['24h', '48h', '7d', '30d', '90d', 'all', 'custom'] as RangePreset[]).map((r) => (
                       <button
                         key={r}
                         type="button"
                         onClick={() => setFilters((p) => ({ ...p, range: r }))}
-                        className={`rounded-full px-2.5 py-1 cursor-pointer transition-colors ${
+                        className={`whitespace-nowrap shrink-0 rounded-full px-2.5 py-1.5 sm:py-1 cursor-pointer transition-colors ${
                           filters.range === r
                             ? 'bg-[#8d6b32] text-[#fffcf6] font-medium'
                             : 'text-[#4a4338] hover:text-[#1c1914]'
@@ -362,8 +439,8 @@ export default function App() {
                 </div>
 
                 {/* Group By */}
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="text-[11px] uppercase tracking-wider text-[#6e6558] font-medium">
+                <div className="flex items-center gap-2 text-xs w-full sm:w-auto">
+                  <span className="text-[11px] uppercase tracking-wider text-[#6e6558] font-medium shrink-0">
                     Stack by
                   </span>
                   <select
@@ -371,7 +448,7 @@ export default function App() {
                     onChange={(e) =>
                       setFilters((p) => ({ ...p, groupBy: e.target.value as GroupBy }))
                     }
-                    className="rounded-lg border border-[#d5cdb8] bg-[#f7f3ea] px-2.5 py-1.5 text-xs text-[#1c1914]"
+                    className="flex-1 sm:flex-none rounded-lg border border-[#d5cdb8] bg-[#f7f3ea] px-2.5 py-1.5 text-sm sm:text-xs text-[#1c1914]"
                   >
                     <option value="release">Release (Curriculum / Books)</option>
                     <option value="language">Language (EN / DE)</option>
@@ -389,7 +466,7 @@ export default function App() {
                       type="date"
                       value={filters.from}
                       onChange={(e) => setFilters((p) => ({ ...p, from: e.target.value }))}
-                      className="rounded-lg border border-[#d5cdb8] bg-[#fffcf6] px-2.5 py-1 text-xs"
+                      className="rounded-lg border border-[#d5cdb8] bg-[#fffcf6] px-2.5 py-1 text-sm sm:text-xs"
                     />
                   </label>
                   <label className="flex items-center gap-1.5 text-[#4a4338]">
@@ -398,96 +475,129 @@ export default function App() {
                       type="date"
                       value={filters.to}
                       onChange={(e) => setFilters((p) => ({ ...p, to: e.target.value }))}
-                      className="rounded-lg border border-[#d5cdb8] bg-[#fffcf6] px-2.5 py-1 text-xs"
+                      className="rounded-lg border border-[#d5cdb8] bg-[#fffcf6] px-2.5 py-1 text-sm sm:text-xs"
                     />
                   </label>
                 </div>
               )}
 
-              {/* Dimension Filters */}
-              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-[#ece5d7] text-xs">
-                <input
-                  type="search"
-                  value={filters.search}
-                  onChange={(e) => setFilters((p) => ({ ...p, search: e.target.value }))}
-                  placeholder="Search workbook, book, author..."
-                  className="w-56 rounded-lg border border-[#d5cdb8] bg-[#fffcf6] px-3 py-1.5 text-xs text-[#1c1914] placeholder:text-[#8d8475] focus:outline-none focus:border-[#1e4636]"
-                />
+              {/* Search + Mobile Filter Toggle + Dimension Filters */}
+              <div className="pt-2 border-t border-[#ece5d7] space-y-2">
+                <div className="flex items-center gap-2 text-xs">
+                  <input
+                    type="search"
+                    value={filters.search}
+                    onChange={(e) => setFilters((p) => ({ ...p, search: e.target.value }))}
+                    placeholder="Search workbook, book, author..."
+                    className="flex-1 sm:w-56 sm:flex-none rounded-lg border border-[#d5cdb8] bg-[#fffcf6] px-3 py-1.5 text-sm sm:text-xs text-[#1c1914] placeholder:text-[#8d8475] focus:outline-none focus:border-[#1e4636]"
+                  />
 
-                <select
-                  value={filters.release}
-                  onChange={(e) => setFilters((p) => ({ ...p, release: e.target.value }))}
-                  className="rounded-lg border border-[#d5cdb8] bg-[#f7f3ea] px-2.5 py-1.5 text-xs text-[#1c1914]"
-                >
-                  <option value="">All Releases</option>
-                  {(overview?.filters.releases ?? ['curriculum', 'books']).map((r) => (
-                    <option key={r} value={r}>
-                      {seriesLabel(r)}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={filters.subject}
-                  onChange={(e) => setFilters((p) => ({ ...p, subject: e.target.value }))}
-                  className="rounded-lg border border-[#d5cdb8] bg-[#f7f3ea] px-2.5 py-1.5 text-xs text-[#1c1914]"
-                >
-                  <option value="">All Subjects</option>
-                  {(overview?.filters.subjects ?? []).map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={filters.language}
-                  onChange={(e) => setFilters((p) => ({ ...p, language: e.target.value }))}
-                  className="rounded-lg border border-[#d5cdb8] bg-[#f7f3ea] px-2.5 py-1.5 text-xs text-[#1c1914]"
-                >
-                  <option value="">All Languages</option>
-                  {(overview?.filters.languages ?? ['en', 'de', 'all']).map((l) => (
-                    <option key={l} value={l}>
-                      {seriesLabel(l)}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={filters.edition}
-                  onChange={(e) => setFilters((p) => ({ ...p, edition: e.target.value }))}
-                  className="rounded-lg border border-[#d5cdb8] bg-[#f7f3ea] px-2.5 py-1.5 text-xs text-[#1c1914]"
-                >
-                  <option value="">All Editions</option>
-                  {(overview?.filters.editions ?? ['tablet', 'phone', 'all']).map((ed) => (
-                    <option key={ed} value={ed}>
-                      {ed}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={filters.tz}
-                  onChange={(e) => setFilters((p) => ({ ...p, tz: e.target.value }))}
-                  className="ml-auto rounded-lg border border-[#d5cdb8] bg-[#f7f3ea] px-2.5 py-1.5 text-xs text-[#1c1914]"
-                  title="Display timezone"
-                >
-                  {tzOptions.map((tz) => (
-                    <option key={tz} value={tz}>
-                      TZ: {tz}
-                    </option>
-                  ))}
-                </select>
-
-                {hasActiveFilters && (
                   <button
                     type="button"
-                    onClick={resetFilters}
-                    className="rounded-lg border border-[#a4513a]/40 bg-[#a4513a]/10 px-2.5 py-1.5 text-xs font-medium text-[#a4513a] hover:bg-[#a4513a]/20 cursor-pointer"
+                    onClick={() => setMobileFiltersOpen((v) => !v)}
+                    className="sm:hidden rounded-lg border border-[#d5cdb8] bg-[#f3eee4] px-2.5 py-1.5 text-xs font-medium text-[#1c1914] shrink-0"
                   >
-                    Reset
+                    Filters{activeDropdownFilterCount > 0 ? ` (${activeDropdownFilterCount})` : ''}
                   </button>
-                )}
+
+                  <a
+                    href={csvExportURL('timeseries', filters)}
+                    className="sm:hidden rounded-lg border border-[#d5cdb8] bg-[#f3eee4] px-2.5 py-1.5 text-xs font-medium text-[#4a4338] shrink-0"
+                  >
+                    CSV
+                  </a>
+
+                  {hasActiveFilters && (
+                    <button
+                      type="button"
+                      onClick={resetFilters}
+                      className="sm:hidden rounded-lg border border-[#a4513a]/40 bg-[#a4513a]/10 px-2.5 py-1.5 text-xs font-medium text-[#a4513a]"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+
+                <div
+                  className={`${
+                    mobileFiltersOpen ? 'grid grid-cols-2' : 'hidden'
+                  } sm:flex sm:flex-wrap items-center gap-2 text-xs`}
+                >
+                  <select
+                    value={filters.release}
+                    onChange={(e) => setFilters((p) => ({ ...p, release: e.target.value }))}
+                    className="rounded-lg border border-[#d5cdb8] bg-[#f7f3ea] px-2.5 py-1.5 text-sm sm:text-xs text-[#1c1914]"
+                  >
+                    <option value="">All Releases</option>
+                    {(overview?.filters.releases ?? ['curriculum', 'books']).map((r) => (
+                      <option key={r} value={r}>
+                        {seriesLabel(r)}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={filters.subject}
+                    onChange={(e) => setFilters((p) => ({ ...p, subject: e.target.value }))}
+                    className="rounded-lg border border-[#d5cdb8] bg-[#f7f3ea] px-2.5 py-1.5 text-sm sm:text-xs text-[#1c1914]"
+                  >
+                    <option value="">All Subjects</option>
+                    {(overview?.filters.subjects ?? []).map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={filters.language}
+                    onChange={(e) => setFilters((p) => ({ ...p, language: e.target.value }))}
+                    className="rounded-lg border border-[#d5cdb8] bg-[#f7f3ea] px-2.5 py-1.5 text-sm sm:text-xs text-[#1c1914]"
+                  >
+                    <option value="">All Languages</option>
+                    {(overview?.filters.languages ?? ['en', 'de', 'all']).map((l) => (
+                      <option key={l} value={l}>
+                        {seriesLabel(l)}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={filters.edition}
+                    onChange={(e) => setFilters((p) => ({ ...p, edition: e.target.value }))}
+                    className="rounded-lg border border-[#d5cdb8] bg-[#f7f3ea] px-2.5 py-1.5 text-sm sm:text-xs text-[#1c1914]"
+                  >
+                    <option value="">All Editions</option>
+                    {(overview?.filters.editions ?? ['tablet', 'phone', 'all']).map((ed) => (
+                      <option key={ed} value={ed}>
+                        {ed}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={filters.tz}
+                    onChange={(e) => setFilters((p) => ({ ...p, tz: e.target.value }))}
+                    className="col-span-2 sm:col-span-1 sm:ml-auto rounded-lg border border-[#d5cdb8] bg-[#f7f3ea] px-2.5 py-1.5 text-sm sm:text-xs text-[#1c1914]"
+                    title="Display timezone"
+                  >
+                    {tzOptions.map((tz) => (
+                      <option key={tz} value={tz}>
+                        TZ: {tz}
+                      </option>
+                    ))}
+                  </select>
+
+                  {hasActiveFilters && (
+                    <button
+                      type="button"
+                      onClick={resetFilters}
+                      className="hidden sm:inline-block rounded-lg border border-[#a4513a]/40 bg-[#a4513a]/10 px-2.5 py-1.5 text-xs font-medium text-[#a4513a] hover:bg-[#a4513a]/20 cursor-pointer"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -511,7 +621,7 @@ export default function App() {
                 )}
 
                 {ts && overview && (
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
                     <ActivityHeatmap
                       hourlyProfile={ts.hourly_profile}
                       matrix={ts.activity_matrix}
@@ -550,7 +660,7 @@ export default function App() {
         )}
       </div>
 
-      <footer className="border-t border-[#d5cdb8] py-5 text-xs text-[#6e6558]">
+      <footer className="hidden md:block border-t border-[#d5cdb8] py-5 text-xs text-[#6e6558]">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-wrap justify-between gap-2">
           <span>Professor Euler Statistics · euler-stats.dawei7.com</span>
           <span>
@@ -558,6 +668,60 @@ export default function App() {
           </span>
         </div>
       </footer>
+
+      {/* Mobile Fixed Bottom Navigation Bar */}
+      <nav
+        aria-label="Primary sections"
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-[#d5cdb8] bg-[#fffcf6]/95 backdrop-blur-md safe-pb"
+      >
+        <div className="grid grid-cols-3">
+          {(
+            [
+              ['play', 'Play Store'],
+              ['library', 'Library'],
+              ['polls', 'Collector'],
+            ] as [MainTab, string][]
+          ).map(([id, label]) => {
+            const active = tab === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => switchTab(id)}
+                className={`flex flex-col items-center justify-center gap-0.5 py-2 min-h-[54px] text-[11px] font-medium transition-colors cursor-pointer ${
+                  active ? 'text-[#1e4636]' : 'text-[#6e6558]'
+                }`}
+              >
+                <span
+                  className={`flex items-center justify-center rounded-full px-3.5 py-1 transition-colors ${
+                    active ? 'bg-[#1e4636]/12' : ''
+                  }`}
+                >
+                  {id === 'play' && (
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth={2}>
+                      <path d="M3 17l6-6 4 4 8-8" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M17 7h4v4" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                  {id === 'library' && (
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth={2}>
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" strokeLinecap="round" />
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                    </svg>
+                  )}
+                  {id === 'polls' && (
+                    <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth={2}>
+                      <circle cx="12" cy="12" r="9" />
+                      <path d="M12 7v5l3 2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  )}
+                </span>
+                <span>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
 
       {selectedAsset && (
         <AssetDetailModal

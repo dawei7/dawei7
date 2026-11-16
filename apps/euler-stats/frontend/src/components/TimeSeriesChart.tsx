@@ -37,12 +37,13 @@ export function TimeSeriesChart({
     return () => ro.disconnect();
   }, []);
 
+  const isNarrow = width < 520;
   const buckets = data.buckets;
   const keys = data.series_keys.length > 0 ? data.series_keys : ['total'];
 
-  const height = 310;
-  const margin = { top: 18, right: 20, bottom: 38, left: 50 };
-  const plotW = Math.max(200, width - margin.left - margin.right);
+  const height = isNarrow ? 225 : 300;
+  const margin = { top: 14, right: 10, bottom: 34, left: isNarrow ? 34 : 48 };
+  const plotW = Math.max(180, width - margin.left - margin.right);
   const plotH = height - margin.top - margin.bottom;
 
   const { maxVal, hasAnyDelta, cumPoints } = useMemo(() => {
@@ -72,10 +73,10 @@ export function TimeSeriesChart({
   }, [maxVal]);
 
   const xLabelEvery = useMemo(() => {
-    if (buckets.length <= 8) return 1;
-    const maxLabels = Math.max(4, Math.floor(plotW / 86));
+    if (buckets.length <= 6) return 1;
+    const maxLabels = Math.max(3, Math.floor(plotW / (isNarrow ? 72 : 88)));
     return Math.ceil(buckets.length / maxLabels);
-  }, [buckets.length, plotW]);
+  }, [buckets.length, plotW, isNarrow]);
 
   const barStep = buckets.length > 0 ? plotW / buckets.length : plotW;
   const barW = Math.max(2, Math.min(34, barStep * 0.72));
@@ -86,9 +87,12 @@ export function TimeSeriesChart({
   const cumLinePath = useMemo(() => {
     if (cumPoints.length === 0) return '';
     return cumPoints
-      .map((pt, i) => `${i === 0 ? 'M' : 'L'} ${xCenter(pt.idx).toFixed(1)} ${(margin.top + yScale(pt.val)).toFixed(1)}`)
+      .map(
+        (pt, i) =>
+          `${i === 0 ? 'M' : 'L'} ${xCenter(pt.idx).toFixed(1)} ${(margin.top + yScale(pt.val)).toFixed(1)}`,
+      )
       .join(' ');
-  }, [cumPoints, barStep, maxVal]);
+  }, [cumPoints, barStep, maxVal, margin.left, margin.top, plotH]);
 
   const cumAreaPath = useMemo(() => {
     if (cumPoints.length < 2) return '';
@@ -96,15 +100,14 @@ export function TimeSeriesChart({
     const last = cumPoints[cumPoints.length - 1];
     const baseY = (margin.top + plotH).toFixed(1);
     return `${cumLinePath} L ${xCenter(last.idx).toFixed(1)} ${baseY} L ${xCenter(first.idx).toFixed(1)} ${baseY} Z`;
-  }, [cumLinePath, cumPoints, plotH]);
+  }, [cumLinePath, cumPoints, plotH, margin.top]);
 
   const hoveredBucket: TimeSeriesBucket | null =
     hoverIdx !== null && buckets[hoverIdx] ? buckets[hoverIdx] : null;
 
-  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+  const selectAtClientX = (clientX: number, rectLeft: number) => {
     if (buckets.length === 0) return;
-    const rect = e.currentTarget.getBoundingClientRect();
-    const relX = e.clientX - rect.left - margin.left;
+    const relX = clientX - rectLeft - margin.left;
     if (relX < 0 || relX > plotW) {
       setHoverIdx(null);
       return;
@@ -114,24 +117,21 @@ export function TimeSeriesChart({
   };
 
   return (
-    <div className="rounded-2xl border border-[#d5cdb8] bg-[#fffcf6]/85 p-5 shadow-xs">
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <div className="rounded-2xl border border-[#d5cdb8] bg-[#fffcf6]/85 p-4 sm:p-5 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div>
-          <h2 className="text-lg font-medium text-[#1c1914]">
-            {metric === 'delta' ? 'Downloads Over Time (New per Bucket)' : 'Cumulative Total Downloads'}
+          <h2 className="text-base sm:text-lg font-medium text-[#1c1914]">
+            {metric === 'delta' ? 'Downloads Over Time' : 'Cumulative Total Downloads'}
           </h2>
-          <p className="text-xs text-[#6e6558] mt-0.5">
-            Granularity: <strong className="text-[#4a4338]">{data.granularity}</strong> · Timezone:{' '}
-            <strong className="text-[#4a4338]">{data.timezone}</strong> ·{' '}
-            {buckets.length} continuous buckets
+          <p className="text-[11px] sm:text-xs text-[#6e6558] mt-0.5">
+            <strong>{data.granularity}</strong> · {data.timezone} · {buckets.length} buckets
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          {/* Legend */}
-          <div className="flex flex-wrap items-center gap-3 text-xs text-[#4a4338]">
+        <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-[#4a4338]">
             {keys.map((k, idx) => (
-              <span key={k} className="inline-flex items-center gap-1.5">
+              <span key={k} className="inline-flex items-center gap-1">
                 <span
                   className="h-2.5 w-2.5 rounded-xs"
                   style={{ backgroundColor: seriesColor(k, idx) }}
@@ -170,32 +170,62 @@ export function TimeSeriesChart({
 
       {/* Baseline initialization banner */}
       {firstPolledAt && metric === 'delta' && !hasAnyDelta && (
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#8d6b32]/30 bg-[#8d6b32]/10 px-3.5 py-2.5 text-xs text-[#4a4338]">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#8d6b32]/30 bg-[#8d6b32]/10 px-3 py-2 text-xs text-[#4a4338]">
           <span>
-            Tracking started <strong>{formatTimestamp(firstPolledAt, tz)}</strong> with{' '}
-            <strong className="tabular-nums">{formatNumber(baselineTotal)}</strong> pre-existing
-            downloads recorded as the baseline. Hourly &amp; daily deltas accumulate automatically on
-            every top-of-hour poll.
+            Baseline captured <strong>{formatTimestamp(firstPolledAt, tz)}</strong> (
+            <strong className="tabular-nums">{formatNumber(baselineTotal)}</strong> total). Deltas
+            accumulate on each top-of-hour poll.
           </span>
           <button
             type="button"
             onClick={() => onChangeMetric('cumulative')}
             className="rounded-full bg-[#8d6b32] px-3 py-1 text-[#fffcf6] font-medium hover:bg-[#725524] transition-colors cursor-pointer"
           >
-            View Cumulative Baseline
+            View Cumulative
           </button>
         </div>
       )}
 
-      <div ref={containerRef} className="relative w-full select-none">
+      {/* Mobile inline scrubbed details strip (never clips off screen) */}
+      {isNarrow && hoveredBucket && (
+        <div className="mb-2 flex items-center justify-between gap-2 rounded-xl border border-[#d5cdb8] bg-[#f7f3ea] px-3 py-2 text-xs tabular-nums">
+          <div className="min-w-0">
+            <div className="font-semibold text-[#1c1914] truncate">
+              {formatTimestamp(hoveredBucket.timestamp, tz)}
+            </div>
+            <div className="text-[#4a4338]">
+              +{formatNumber(hoveredBucket.delta)} new · Cum:{' '}
+              {hoveredBucket.cumulative !== null ? formatNumber(hoveredBucket.cumulative) : '—'}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setHoverIdx(null)}
+            className="shrink-0 rounded-full border border-[#d5cdb8] bg-[#fffcf6] px-2 py-0.5 text-[11px] text-[#6e6558]"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
+      <div ref={containerRef} className="relative w-full select-none touch-pan-y">
         <svg
           width={width}
           height={height}
           className="overflow-visible block"
-          onMouseMove={handleMouseMove}
+          onMouseMove={(e) => selectAtClientX(e.clientX, e.currentTarget.getBoundingClientRect().left)}
           onMouseLeave={() => setHoverIdx(null)}
+          onTouchStart={(e) => {
+            if (e.touches[0]) {
+              selectAtClientX(e.touches[0].clientX, e.currentTarget.getBoundingClientRect().left);
+            }
+          }}
+          onTouchMove={(e) => {
+            if (e.touches[0]) {
+              selectAtClientX(e.touches[0].clientX, e.currentTarget.getBoundingClientRect().left);
+            }
+          }}
         >
-          {/* Horizontal gridlines + Y-axis labels */}
           {yTicks.map((tick) => {
             const y = margin.top + yScale(tick);
             return (
@@ -209,10 +239,10 @@ export function TimeSeriesChart({
                   strokeDasharray={tick === 0 ? undefined : '3 3'}
                 />
                 <text
-                  x={margin.left - 8}
+                  x={margin.left - 6}
                   y={y + 4}
                   textAnchor="end"
-                  className="fill-[#6e6558] text-[11px] tabular-nums"
+                  className="fill-[#6e6558] text-[10px] sm:text-[11px] tabular-nums"
                 >
                   {formatNumber(tick)}
                 </text>
@@ -220,7 +250,6 @@ export function TimeSeriesChart({
             );
           })}
 
-          {/* Hover vertical highlight */}
           {hoverIdx !== null && buckets[hoverIdx] && (
             <rect
               x={margin.left + hoverIdx * barStep}
@@ -228,12 +257,11 @@ export function TimeSeriesChart({
               width={barStep}
               height={plotH}
               fill="#1e4636"
-              fillOpacity={0.07}
+              fillOpacity={0.08}
               rx={3}
             />
           )}
 
-          {/* Stacked Bars (Delta mode) */}
           {metric === 'delta' &&
             buckets.map((b, idx) => {
               let runningY = plotH;
@@ -262,7 +290,6 @@ export function TimeSeriesChart({
               );
             })}
 
-          {/* Cumulative Area + Line (Cumulative mode) */}
           {metric === 'cumulative' && (
             <g>
               {cumAreaPath && <path d={cumAreaPath} fill="#1e4636" fillOpacity={0.12} />}
@@ -290,7 +317,6 @@ export function TimeSeriesChart({
             </g>
           )}
 
-          {/* X-axis tick labels */}
           {buckets.map((b, idx) => {
             const isLast = idx === buckets.length - 1;
             if (idx % xLabelEvery !== 0 && !isLast) return null;
@@ -301,7 +327,7 @@ export function TimeSeriesChart({
                 x={xCenter(idx)}
                 y={height - 10}
                 textAnchor="middle"
-                className="fill-[#6e6558] text-[11px] tabular-nums"
+                className="fill-[#6e6558] text-[10px] sm:text-[11px] tabular-nums"
               >
                 {b.label}
               </text>
@@ -309,8 +335,8 @@ export function TimeSeriesChart({
           })}
         </svg>
 
-        {/* Floating Hover Tooltip */}
-        {hoveredBucket && hoverIdx !== null && (
+        {/* Desktop floating tooltip */}
+        {!isNarrow && hoveredBucket && hoverIdx !== null && (
           <div
             className="pointer-events-none absolute top-2 z-10 min-w-48 rounded-xl border border-[#d5cdb8] bg-[#fffcf6]/95 p-3 shadow-md text-xs"
             style={{

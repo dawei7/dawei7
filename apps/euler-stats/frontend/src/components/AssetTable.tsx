@@ -52,21 +52,21 @@ export function AssetTable({
 
   return (
     <div className="rounded-2xl border border-[#d5cdb8] bg-[#fffcf6]/85 shadow-xs overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-[#e7e0d2]">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 sm:px-5 py-4 border-b border-[#e7e0d2]">
         <div>
-          <h2 className="text-lg font-medium text-[#1c1914]">
+          <h2 className="text-base sm:text-lg font-medium text-[#1c1914]">
             {mode === 'items'
-              ? `Workbooks & Books — Accumulated Across Versions (${assets.length})`
+              ? `Workbooks & Books (${assets.length})`
               : `Individual File Versions (${assets.length})`}
           </h2>
           <p className="text-xs text-[#6e6558]">
             {mode === 'items'
-              ? 'Downloads automatically accumulate across replaced/deleted file hashes of the same workbook or book. Click a row to view version history.'
-              : 'Each uploaded GitHub release file hash listed separately, including retired versions.'}
+              ? 'Accumulated across replaced/deleted versions. Tap any item for version history.'
+              : 'Each uploaded file hash listed separately.'}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex rounded-full border border-[#d5cdb8] bg-[#f3eee4] p-0.5 text-xs">
             <button
               type="button"
@@ -77,7 +77,7 @@ export function AssetTable({
                   : 'text-[#4a4338] hover:text-[#1c1914]'
               }`}
             >
-              Accumulated by Item
+              Accumulated
             </button>
             <button
               type="button"
@@ -88,20 +88,116 @@ export function AssetTable({
                   : 'text-[#4a4338] hover:text-[#1c1914]'
               }`}
             >
-              Individual Files
+              Files
             </button>
           </div>
 
           <a
             href={csvUrl}
-            className="inline-flex items-center gap-1.5 rounded-full border border-[#d5cdb8] bg-[#f3eee4] px-3.5 py-1.5 text-xs font-medium text-[#1c1914] hover:border-[#8d6b32] transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-full border border-[#d5cdb8] bg-[#f3eee4] px-3 py-1.5 text-xs font-medium text-[#1c1914] hover:border-[#8d6b32] transition-colors"
           >
-            Download CSV
+            CSV
           </a>
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      {/* Mobile sort selector */}
+      <div className="md:hidden flex items-center justify-between gap-2 px-4 py-2.5 bg-[#f7f3ea]/70 border-b border-[#e7e0d2] text-xs">
+        <span className="text-[#6e6558]">Sort by</span>
+        <div className="flex items-center gap-1.5">
+          <select
+            value={sort}
+            onChange={(e) => onSort(e.target.value as SortField)}
+            className="rounded-lg border border-[#d5cdb8] bg-[#fffcf6] px-2.5 py-1 text-sm text-[#1c1914]"
+          >
+            <option value="all_time_downloads">Accumulated Downloads</option>
+            <option value="window_delta">Window New</option>
+            <option value="last_24h_delta">Last 24h</option>
+            <option value="last_7d_delta">Last 7d</option>
+            <option value="size_bytes">File Size</option>
+            <option value="display_title">Title</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => onSort(sort)}
+            className="rounded-lg border border-[#d5cdb8] bg-[#fffcf6] px-2.5 py-1 text-xs text-[#1c1914]"
+          >
+            {dir === 'desc' ? '↓' : '↑'}
+          </button>
+        </div>
+      </div>
+
+      {/* Mobile card list */}
+      <div className="md:hidden divide-y divide-[#ece5d7]">
+        {assets.length === 0 ? (
+          <div className="py-10 text-center text-sm text-[#6e6558]">
+            No assets match the current filters.
+          </div>
+        ) : (
+          assets.map((a) => {
+            const barW = Math.max(2, Math.round((a.all_time_downloads / maxDownloads) * 100));
+            const rowKey = mode === 'items' ? `${a.release_tag}:${a.item_key}` : String(a.asset_id);
+            return (
+              <button
+                key={rowKey}
+                type="button"
+                onClick={() => onSelectAsset(a)}
+                className="w-full text-left px-4 py-3.5 active:bg-[#f3eee4] transition-colors"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium text-sm text-[#1c1914] leading-snug">
+                      {a.display_title}
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                      <span
+                        className={`rounded-full px-2 py-0.5 font-medium ${
+                          a.release_tag === 'curriculum'
+                            ? 'bg-[#1e4636]/12 text-[#1e4636]'
+                            : 'bg-[#8d6b32]/15 text-[#725524]'
+                        }`}
+                      >
+                        {a.release_tag}
+                      </span>
+                      <span className="rounded bg-[#e7e0d2] px-1.5 py-0.5 font-medium text-[#1c1914]">
+                        {languageBadge(a.language)}
+                      </span>
+                      <span className="text-[#4a4338]">{editionLabel(a.edition)}</span>
+                      <span className="text-[#6e6558]">· {formatBytes(a.size_bytes)}</span>
+                      {mode === 'items' && a.version_count > 1 && (
+                        <span className="rounded-full bg-[#1e4636]/12 px-1.5 py-0.5 text-[10px] font-medium text-[#1e4636]">
+                          {a.version_count} ver
+                        </span>
+                      )}
+                      {!a.is_active && (
+                        <span className="rounded-full bg-[#8d6b32]/15 px-1.5 py-0.5 text-[10px] text-[#725524]">
+                          Retired
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right tabular-nums">
+                    <div className="text-base font-semibold text-[#1c1914]">
+                      {formatNumber(a.all_time_downloads)}
+                    </div>
+                    {a.window_delta > 0 && (
+                      <div className="text-[11px] font-medium text-[#1e4636]">
+                        +{formatNumber(a.window_delta)}
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-2 h-1 w-full rounded-full bg-[#e7e0d2] overflow-hidden">
+                  <div className="h-full bg-[#1e4636]" style={{ width: `${barW}%` }} />
+                </div>
+              </button>
+            );
+          })
+        )}
+      </div>
+
+      {/* Desktop table */}
+      <div className="hidden md:block overflow-x-auto">
         <table className="w-full text-left border-collapse text-sm">
           <thead>
             <tr className="border-b border-[#e7e0d2] bg-[#f7f3ea]/80 text-[11px] uppercase tracking-wider text-[#6e6558]">

@@ -78,11 +78,11 @@ export function AssetDetailModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[#1c1914]/50 backdrop-blur-xs p-4"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-[#1c1914]/50 backdrop-blur-xs p-0 sm:p-4"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl border border-[#d5cdb8] bg-[#f7f3ea] p-6 shadow-xl"
+        className="w-full max-w-4xl max-h-[92dvh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-[#d5cdb8] bg-[#f7f3ea] p-4 sm:p-6 shadow-xl safe-pb"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-4 border-b border-[#d5cdb8] pb-4">
@@ -199,18 +199,59 @@ export function AssetDetailModal({
           />
         ) : null}
 
-        {/* Version History Table */}
+        {/* Version History */}
         {versions.length > 0 && (
           <div className="mt-4 rounded-xl border border-[#d5cdb8] bg-[#fffcf6] overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-[#e7e0d2] flex items-center justify-between text-xs">
+            <div className="px-3.5 sm:px-4 py-2.5 border-b border-[#e7e0d2] flex flex-wrap items-center justify-between gap-2 text-xs">
               <strong className="text-[#1c1914]">
                 File Version History ({versions.length})
               </strong>
               <span className="text-[#6e6558] tabular-nums">
-                Total across all versions: {formatNumber(versions.reduce((s, v) => s + v.all_time_downloads, 0))}
+                Total: {formatNumber(versions.reduce((s, v) => s + v.all_time_downloads, 0))}
               </span>
             </div>
-            <div className="overflow-x-auto">
+
+            {/* Mobile cards */}
+            <div className="sm:hidden divide-y divide-[#ece5d7]">
+              {versions.map((v) => (
+                <div key={v.asset_id} className="p-3.5 text-xs">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-mono text-[11px] text-[#1c1914] truncate">{v.asset_name}</div>
+                      <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                        {v.is_active ? (
+                          <span className="rounded-full bg-[#1e4636]/12 px-2 py-0.5 text-[10px] font-medium text-[#1e4636]">
+                            Active
+                          </span>
+                        ) : (
+                          <span className="rounded-full bg-[#8d6b32]/15 px-2 py-0.5 text-[10px] font-medium text-[#725524]">
+                            Deleted / Replaced
+                          </span>
+                        )}
+                        <span className="text-[11px] text-[#6e6558]">{formatBytes(v.size_bytes)}</span>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0 tabular-nums">
+                      <div className="text-base font-semibold text-[#1c1914]">
+                        {formatNumber(v.all_time_downloads)}
+                      </div>
+                      <div className="text-[10px] text-[#6e6558]">downloads</div>
+                    </div>
+                  </div>
+                  <div className="mt-2 grid grid-cols-2 gap-2 text-[11px] text-[#4a4338] tabular-nums">
+                    <div>
+                      <span className="text-[#6e6558]">First:</span> {formatTimestamp(v.first_seen_at, filters.tz)}
+                    </div>
+                    <div>
+                      <span className="text-[#6e6558]">Last:</span> {formatTimestamp(v.last_seen_at, filters.tz)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Desktop table */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="border-b border-[#e7e0d2] bg-[#f7f3ea] text-[10px] uppercase tracking-wider text-[#6e6558]">

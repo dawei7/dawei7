@@ -424,13 +424,19 @@ func newMux(store analyticsReader, collector pollRunner, playSyncer playSyncRunn
 		writeJSON(w, http.StatusOK, res)
 	})
 
-	// Embedded React SPA
+	// Embedded React SPA + PWA static assets
 	sub, err := fs.Sub(staticFiles, "frontend/dist")
 	if err != nil {
 		log.Fatalf("embed sub: %v", err)
 	}
+	mux.Handle("GET /", newSPAHandler(sub))
+
+	return mux
+}
+
+func newSPAHandler(sub fs.FS) http.Handler {
 	fileServer := http.FileServer(http.FS(sub))
-	mux.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
 			jsonError(w, "not found", http.StatusNotFound)
 			return
@@ -439,11 +445,6 @@ func newMux(store analyticsReader, collector pollRunner, playSyncer playSyncRunn
 		if clean == "" {
 			clean = "index.html"
 		}
-		if strings.HasPrefix(clean, "assets/") {
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		} else {
-			w.Header().Set("Cache-Control", "no-cache")
-		}
 		if _, err := fs.Stat(sub, clean); err != nil {
 			r2 := r.Clone(r.Context())
 			r2.URL.Path = "/"
@@ -451,10 +452,22 @@ func newMux(store analyticsReader, collector pollRunner, playSyncer playSyncRunn
 			fileServer.ServeHTTP(w, r2)
 			return
 		}
+		switch {
+		case strings.HasPrefix(clean, "assets/"):
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		case strings.HasPrefix(clean, "icons/"):
+			w.Header().Set("Cache-Control", "public, max-age=604800")
+		case clean == "manifest.webmanifest":
+			w.Header().Set("Content-Type", "application/manifest+json; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-cache")
+		case clean == "sw.js":
+			w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+			w.Header().Set("Cache-Control", "no-cache")
+		default:
+			w.Header().Set("Cache-Control", "no-cache")
+		}
 		fileServer.ServeHTTP(w, r)
 	})
-
-	return mux
 }
 
 func parseQueryParams(r *http.Request, store analyticsReader) (db.QueryParams, string) {

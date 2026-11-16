@@ -1,3 +1,4 @@
 node_modules/
-dist/assets/
+dist/*
+!dist/index.html
 *.tsbuildinfo

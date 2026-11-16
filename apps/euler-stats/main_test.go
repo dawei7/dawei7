@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/dawei7/dawei7/apps/euler-stats/db"
@@ -211,5 +212,46 @@ func TestHandlersValidationCSVAndAdminAuth(t *testing.T) {
 	mux.ServeHTTP(recPlayCSV, reqPlayCSV)
 	if recPlayCSV.Code != http.StatusOK || !strings.Contains(recPlayCSV.Body.String(), "device_installs,device_uninstalls") {
 		t.Fatalf("unexpected play CSV response (%d): %s", recPlayCSV.Code, recPlayCSV.Body.String())
+	}
+}
+
+func TestSPAHandlerPWAHeaders(t *testing.T) {
+	mockDist := fstest.MapFS{
+		"index.html":           &fstest.MapFile{Data: []byte("<!doctype html><html><body>ok</body></html>")},
+		"manifest.webmanifest": &fstest.MapFile{Data: []byte(`{"name":"Euler Stats"}`)},
+		"sw.js":                &fstest.MapFile{Data: []byte("self.addEventListener('fetch', () => {});")},
+		"icons/icon-192.png":   &fstest.MapFile{Data: []byte{0x89, 0x50, 0x4e, 0x47}},
+		"assets/app-123.js":    &fstest.MapFile{Data: []byte("console.log(1)")},
+	}
+	h := newSPAHandler(mockDist)
+
+	cases := []struct {
+		path        string
+		wantCT      string
+		wantCC      string
+		wantContain string
+	}{
+		{"/manifest.webmanifest", "application/manifest+json", "no-cache", "Euler Stats"},
+		{"/sw.js", "application/javascript", "no-cache", "addEventListener"},
+		{"/icons/icon-192.png", "image/png", "max-age=604800", ""},
+		{"/assets/app-123.js", "", "immutable", "console.log"},
+		{"/unknown-route", "text/html", "no-cache", "<!doctype html>"},
+	}
+
+	for _, tc := range cases {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tc.path, nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: expected 200, got %d", tc.path, rec.Code)
+		}
+		if tc.wantCT != "" && !strings.Contains(rec.Header().Get("Content-Type"), tc.wantCT) {
+			t.Fatalf("%s: expected Content-Type containing %q, got %q", tc.path, tc.wantCT, rec.Header().Get("Content-Type"))
+		}
+		if tc.wantCC != "" && !strings.Contains(rec.Header().Get("Cache-Control"), tc.wantCC) {
+			t.Fatalf("%s: expected Cache-Control containing %q, got %q", tc.path, tc.wantCC, rec.Header().Get("Cache-Control"))
+		}
+		if tc.wantContain != "" && !strings.Contains(rec.Body.String(), tc.wantContain) {
+			t.Fatalf("%s: expected body containing %q, got %q", tc.path, tc.wantContain, rec.Body.String())
+		}
 	}
 }
