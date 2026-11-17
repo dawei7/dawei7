@@ -4,6 +4,22 @@ export type RangePreset = '24h' | '48h' | '7d' | '30d' | '90d' | 'all' | 'custom
 export type MetricMode = 'delta' | 'cumulative';
 export type AssetMode = 'items' | 'files';
 
+export type PlayDimFilterType =
+  | ''
+  | 'country'
+  | 'device'
+  | 'app_version'
+  | 'os_version'
+  | 'language'
+  | 'carrier'
+  | 'traffic_source';
+
+export interface TimeRangeSelection {
+  from: string;
+  to: string;
+  label: string;
+}
+
 export interface FilterState {
   granularity: Granularity;
   groupBy: GroupBy;
@@ -17,6 +33,10 @@ export interface FilterState {
   language: string;
   edition: string;
   search: string;
+  itemKey?: string;
+  itemTitle?: string;
+  hour: number | null;
+  dow: number | null;
 }
 
 export interface PollerStatus {

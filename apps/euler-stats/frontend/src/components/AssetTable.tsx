@@ -18,6 +18,17 @@ interface AssetTableProps {
   onSort: (field: SortField) => void;
   onSelectAsset: (asset: AssetRow) => void;
   csvUrl: string;
+  sliceActive?: boolean;
+  totalMatchingCount?: number;
+  showAllInSlice?: boolean;
+  onToggleShowAllInSlice?: () => void;
+  selectedItemKey?: string;
+  selectedRelease?: string;
+  selectedSubject?: string;
+  selectedLanguage?: string;
+  selectedEdition?: string;
+  onToggleItemFilter?: (asset: AssetRow) => void;
+  onToggleFacet?: (facet: 'release' | 'subject' | 'language' | 'edition', value: string) => void;
 }
 
 export function AssetTable({
@@ -29,6 +40,17 @@ export function AssetTable({
   onSort,
   onSelectAsset,
   csvUrl,
+  sliceActive = false,
+  totalMatchingCount,
+  showAllInSlice = false,
+  onToggleShowAllInSlice,
+  selectedItemKey = '',
+  selectedRelease = '',
+  selectedSubject = '',
+  selectedLanguage = '',
+  selectedEdition = '',
+  onToggleItemFilter,
+  onToggleFacet,
 }: AssetTableProps) {
   const maxDownloads = Math.max(1, ...assets.map((a) => a.all_time_downloads));
 
@@ -67,6 +89,21 @@ export function AssetTable({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {sliceActive && onToggleShowAllInSlice && (
+            <button
+              type="button"
+              onClick={onToggleShowAllInSlice}
+              className={`rounded-full border px-3 py-1 text-xs font-medium cursor-pointer transition-colors ${
+                showAllInSlice
+                  ? 'border-[#d5cdb8] bg-[#f3eee4] text-[#4a4338] hover:border-[#1e4636]'
+                  : 'border-[#1e4636] bg-[#1e4636]/12 text-[#1e4636]'
+              }`}
+            >
+              {showAllInSlice
+                ? 'Active in slice only'
+                : `Active in slice (${assets.length}${totalMatchingCount !== undefined ? ` / ${totalMatchingCount}` : ''})`}
+            </button>
+          )}
           <div className="inline-flex rounded-full border border-[#d5cdb8] bg-[#f3eee4] p-0.5 text-xs">
             <button
               type="button"
@@ -150,19 +187,64 @@ export function AssetTable({
                       {a.display_title}
                     </div>
                     <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
-                      <span
-                        className={`rounded-full px-2 py-0.5 font-medium ${
-                          a.release_tag === 'curriculum'
-                            ? 'bg-[#1e4636]/12 text-[#1e4636]'
-                            : 'bg-[#8d6b32]/15 text-[#725524]'
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleFacet?.('release', a.release_tag);
+                        }}
+                        className={`rounded-full px-2 py-0.5 font-medium cursor-pointer transition-colors ${
+                          selectedRelease === a.release_tag
+                            ? 'bg-[#1e4636] text-[#faf7f1]'
+                            : a.release_tag === 'curriculum'
+                              ? 'bg-[#1e4636]/12 text-[#1e4636]'
+                              : 'bg-[#8d6b32]/15 text-[#725524]'
                         }`}
                       >
                         {a.release_tag}
-                      </span>
-                      <span className="rounded bg-[#e7e0d2] px-1.5 py-0.5 font-medium text-[#1c1914]">
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleFacet?.('language', a.language);
+                        }}
+                        className={`rounded px-1.5 py-0.5 font-medium cursor-pointer transition-colors ${
+                          selectedLanguage === a.language
+                            ? 'bg-[#1e4636] text-[#faf7f1]'
+                            : 'bg-[#e7e0d2] text-[#1c1914]'
+                        }`}
+                      >
                         {languageBadge(a.language)}
-                      </span>
-                      <span className="text-[#4a4338]">{editionLabel(a.edition)}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleFacet?.('edition', a.edition);
+                        }}
+                        className={`rounded px-1.5 py-0.5 cursor-pointer transition-colors ${
+                          selectedEdition === a.edition
+                            ? 'bg-[#1e4636] text-[#faf7f1] font-medium'
+                            : 'text-[#4a4338] hover:bg-[#e7e0d2]/70'
+                        }`}
+                      >
+                        {editionLabel(a.edition)}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleItemFilter?.(a);
+                        }}
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-medium cursor-pointer transition-colors ${
+                          selectedItemKey === a.item_key
+                            ? 'border-[#1e4636] bg-[#1e4636] text-[#faf7f1]'
+                            : 'border-[#d5cdb8] bg-[#fffcf6] text-[#4a4338] hover:border-[#1e4636]'
+                        }`}
+                      >
+                        {selectedItemKey === a.item_key ? 'Filtered' : 'Filter'}
+                      </button>
                       <span className="text-[#6e6558]">· {formatBytes(a.size_bytes)}</span>
                       {mode === 'items' && a.version_count > 1 && (
                         <span className="rounded-full bg-[#1e4636]/12 px-1.5 py-0.5 text-[10px] font-medium text-[#1e4636]">
@@ -247,6 +329,23 @@ export function AssetTable({
                             Retired
                           </span>
                         )}
+                        {onToggleItemFilter && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onToggleItemFilter(a);
+                            }}
+                            title="Filter all charts & KPIs to this item"
+                            className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] font-medium cursor-pointer transition-colors ${
+                              selectedItemKey === a.item_key
+                                ? 'border-[#1e4636] bg-[#1e4636] text-[#faf7f1]'
+                                : 'border-[#d5cdb8] bg-[#fffcf6] text-[#6e6558] hover:border-[#1e4636] hover:text-[#1e4636]'
+                            }`}
+                          >
+                            {selectedItemKey === a.item_key ? 'Filtered' : 'Filter'}
+                          </button>
+                        )}
                       </div>
                       <div className="text-xs text-[#6e6558] truncate mt-0.5 font-mono">
                         {mode === 'items' ? a.item_key : a.asset_name}
@@ -254,24 +353,72 @@ export function AssetTable({
                       </div>
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                          a.release_tag === 'curriculum'
-                            ? 'bg-[#1e4636]/12 text-[#1e4636]'
-                            : 'bg-[#8d6b32]/15 text-[#725524]'
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleFacet?.('release', a.release_tag);
+                        }}
+                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium cursor-pointer transition-colors ${
+                          selectedRelease === a.release_tag
+                            ? 'bg-[#1e4636] text-[#faf7f1]'
+                            : a.release_tag === 'curriculum'
+                              ? 'bg-[#1e4636]/12 text-[#1e4636] hover:bg-[#1e4636]/20'
+                              : 'bg-[#8d6b32]/15 text-[#725524] hover:bg-[#8d6b32]/25'
                         }`}
                       >
                         {a.release_tag}
-                      </span>
+                      </button>
                     </td>
-                    <td className="py-3 px-3 text-xs text-[#4a4338] whitespace-nowrap">
-                      {a.subject}
+                    <td className="py-3 px-3 text-xs whitespace-nowrap">
+                      {a.subject ? (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleFacet?.('subject', a.subject);
+                          }}
+                          className={`rounded px-1.5 py-0.5 cursor-pointer transition-colors ${
+                            selectedSubject === a.subject
+                              ? 'bg-[#1e4636] text-[#faf7f1] font-medium'
+                              : 'text-[#4a4338] hover:bg-[#e7e0d2]/75'
+                          }`}
+                        >
+                          {a.subject}
+                        </button>
+                      ) : (
+                        <span className="text-[#9e9484]">—</span>
+                      )}
                     </td>
                     <td className="py-3 px-3 whitespace-nowrap text-xs">
-                      <span className="inline-flex rounded bg-[#e7e0d2] px-1.5 py-0.5 font-medium text-[#1c1914] mr-1.5">
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleFacet?.('language', a.language);
+                        }}
+                        className={`inline-flex rounded px-1.5 py-0.5 font-medium mr-1.5 cursor-pointer transition-colors ${
+                          selectedLanguage === a.language
+                            ? 'bg-[#1e4636] text-[#faf7f1]'
+                            : 'bg-[#e7e0d2] text-[#1c1914] hover:bg-[#d5cdb8]'
+                        }`}
+                      >
                         {languageBadge(a.language)}
-                      </span>
-                      <span className="text-[#4a4338]">{editionLabel(a.edition)}</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onToggleFacet?.('edition', a.edition);
+                        }}
+                        className={`rounded px-1.5 py-0.5 cursor-pointer transition-colors ${
+                          selectedEdition === a.edition
+                            ? 'bg-[#1e4636] text-[#faf7f1] font-medium'
+                            : 'text-[#4a4338] hover:bg-[#e7e0d2]/75'
+                        }`}
+                      >
+                        {editionLabel(a.edition)}
+                      </button>
                     </td>
                     <td className="py-3 px-3 text-right text-xs text-[#6e6558] tabular-nums whitespace-nowrap">
                       {formatBytes(a.size_bytes)}

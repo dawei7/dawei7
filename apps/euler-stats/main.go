@@ -44,8 +44,8 @@ type analyticsReader interface {
 	GetPollRuns(ctx context.Context, limit int) ([]db.PollRunRow, error)
 
 	PlayDateBounds(ctx context.Context) (*time.Time, *time.Time, error)
-	GetPlayOverview(ctx context.Context, pkgName string, fromDate, toDate time.Time, country string, playEnabled bool) (db.PlayOverviewResponse, error)
-	GetPlayTimeSeries(ctx context.Context, pkgName string, gran db.Granularity, from, to time.Time, loc *time.Location, tzName, country string) (db.PlayTimeSeriesResponse, error)
+	GetPlayOverview(ctx context.Context, pkgName string, fromDate, toDate time.Time, filter db.PlayFilter, playEnabled bool) (db.PlayOverviewResponse, error)
+	GetPlayTimeSeries(ctx context.Context, pkgName string, gran db.Granularity, from, to time.Time, loc *time.Location, tzName string, filter db.PlayFilter) (db.PlayTimeSeriesResponse, error)
 	GetPlayReviews(ctx context.Context, pkgName string, limit int) ([]db.PlayReviewView, error)
 	GetPlayVitals(ctx context.Context, pkgName string, limit int) ([]db.PlayVitalsSummaryRow, error)
 	GetPlayPollRuns(ctx context.Context, limit int) ([]db.PlayPollRunRow, error)
@@ -100,9 +100,10 @@ func main() {
 		playBucket = defaultPlayBucket
 	}
 
+	adminSecret := os.Getenv("ADMIN_SECRET")
+
 	mailer := notify.NewSMTPMailerFromEnv()
 	notifier := notify.NewService(store, mailer, playPkg, os.Getenv("NOTIFY_DASHBOARD_URL"))
-	adminSecret := os.Getenv("ADMIN_SECRET")
 
 	if ov, err := notifier.GetOverview(rootCtx, 1, adminSecret != ""); err != nil {
 		log.Printf("notifications initialization warning: %v", err)
@@ -343,12 +344,14 @@ func newMux(
 	// ── Google Play Store Endpoints ──────────────────────────────────────────
 
 	mux.HandleFunc("GET /api/play/overview", func(w http.ResponseWriter, r *http.Request) {
-		params, country, errMsg := parsePlayQueryParams(r, store)
+		params, filter, errMsg := parsePlayQueryParams(r, store)
 		if errMsg != "" {
 			jsonError(w, errMsg, http.StatusBadRequest)
 			return
 		}
-		res, err := store.GetPlayOverview(r.Context(), cfg.playPackage, params.From, params.To, country, cfg.playEnabled)
+		fromDate := calendarDateInLoc(params.From, params.Loc)
+		toDate := calendarDateInLoc(params.To, params.Loc)
+		res, err := store.GetPlayOverview(r.Context(), cfg.playPackage, fromDate, toDate, filter, cfg.playEnabled)
 		if err != nil {
 			jsonError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -357,12 +360,12 @@ func newMux(
 	})
 
 	mux.HandleFunc("GET /api/play/timeseries", func(w http.ResponseWriter, r *http.Request) {
-		params, country, errMsg := parsePlayQueryParams(r, store)
+		params, filter, errMsg := parsePlayQueryParams(r, store)
 		if errMsg != "" {
 			jsonError(w, errMsg, http.StatusBadRequest)
 			return
 		}
-		res, err := store.GetPlayTimeSeries(r.Context(), cfg.playPackage, params.Granularity, params.From, params.To, params.Loc, params.TZName, country)
+		res, err := store.GetPlayTimeSeries(r.Context(), cfg.playPackage, params.Granularity, params.From, params.To, params.Loc, params.TZName, filter)
 		if err != nil {
 			jsonError(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -410,7 +413,7 @@ func newMux(
 	})
 
 	mux.HandleFunc("GET /api/play/export.csv", func(w http.ResponseWriter, r *http.Request) {
-		params, country, errMsg := parsePlayQueryParams(r, store)
+		params, filter, errMsg := parsePlayQueryParams(r, store)
 		if errMsg != "" {
 			jsonError(w, errMsg, http.StatusBadRequest)
 			return
@@ -421,14 +424,16 @@ func newMux(
 		}
 		switch kind {
 		case "timeseries":
-			ts, err := store.GetPlayTimeSeries(r.Context(), cfg.playPackage, params.Granularity, params.From, params.To, params.Loc, params.TZName, country)
+			ts, err := store.GetPlayTimeSeries(r.Context(), cfg.playPackage, params.Granularity, params.From, params.To, params.Loc, params.TZName, filter)
 			if err != nil {
 				jsonError(w, err.Error(), http.StatusInternalServerError)
 				return
 			}
 			writePlayTimeSeriesCSV(w, ts)
 		case "countries":
-			ov, err := store.GetPlayOverview(r.Context(), cfg.playPackage, params.From, params.To, "", cfg.playEnabled)
+			fromDate := calendarDateInLoc(params.From, params.Loc)
+			toDate := calendarDateInLoc(params.To, params.Loc)
+			ov, err := store.GetPlayOverview(r.Context(), cfg.playPackage, fromDate, toDate, db.PlayFilter{}, cfg.playEnabled)
 			if err != nil {
 				jsonError(w, err.Error(), http.StatusInternalServerError)
 				return
@@ -619,6 +624,23 @@ func parseQueryParams(r *http.Request, store analyticsReader) (db.QueryParams, s
 		assetID = parsed
 	}
 
+	var hourPtr *int
+	if hRaw := strings.TrimSpace(q.Get("hour")); hRaw != "" {
+		h, err := strconv.Atoi(hRaw)
+		if err != nil || h < 0 || h > 23 {
+			return db.QueryParams{}, "invalid hour (use 0..23)"
+		}
+		hourPtr = &h
+	}
+	var dowPtr *int
+	if dRaw := strings.TrimSpace(q.Get("dow")); dRaw != "" {
+		d, err := strconv.Atoi(dRaw)
+		if err != nil || d < 1 || d > 7 {
+			return db.QueryParams{}, "invalid dow (use 1..7)"
+		}
+		dowPtr = &d
+	}
+
 	return db.QueryParams{
 		From:        from,
 		To:          to,
@@ -634,6 +656,8 @@ func parseQueryParams(r *http.Request, store analyticsReader) (db.QueryParams, s
 		Search:      strings.TrimSpace(q.Get("q")),
 		AssetID:     assetID,
 		ItemKey:     strings.TrimSpace(q.Get("item_key")),
+		Hour:        hourPtr,
+		DOW:         dowPtr,
 	}, ""
 }
 
@@ -763,11 +787,16 @@ func jsonError(w http.ResponseWriter, msg string, status int) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-func parsePlayQueryParams(r *http.Request, store analyticsReader) (db.QueryParams, string, string) {
+func calendarDateInLoc(t time.Time, loc *time.Location) time.Time {
+	lt := t.In(loc)
+	return time.Date(lt.Year(), lt.Month(), lt.Day(), 0, 0, 0, 0, time.UTC)
+}
+
+func parsePlayQueryParams(r *http.Request, store analyticsReader) (db.QueryParams, db.PlayFilter, string) {
 	q := r.URL.Query()
 	gran, ok := db.ParseGranularity(q.Get("granularity"))
 	if !ok {
-		return db.QueryParams{}, "", "invalid granularity"
+		return db.QueryParams{}, db.PlayFilter{}, "invalid granularity"
 	}
 	tzName := strings.TrimSpace(q.Get("tz"))
 	if tzName == "" {
@@ -775,7 +804,7 @@ func parsePlayQueryParams(r *http.Request, store analyticsReader) (db.QueryParam
 	}
 	loc, err := time.LoadLocation(tzName)
 	if err != nil {
-		return db.QueryParams{}, "", fmt.Sprintf("invalid tz: %s", tzName)
+		return db.QueryParams{}, db.PlayFilter{}, fmt.Sprintf("invalid tz: %s", tzName)
 	}
 
 	now := time.Now().UTC()
@@ -783,7 +812,7 @@ func parsePlayQueryParams(r *http.Request, store analyticsReader) (db.QueryParam
 	if toRaw := strings.TrimSpace(q.Get("to")); toRaw != "" {
 		parsed, err := parseFlexibleTime(toRaw, loc, true)
 		if err != nil {
-			return db.QueryParams{}, "", "invalid to timestamp"
+			return db.QueryParams{}, db.PlayFilter{}, "invalid to timestamp"
 		}
 		to = parsed
 	}
@@ -795,7 +824,7 @@ func parsePlayQueryParams(r *http.Request, store analyticsReader) (db.QueryParam
 	if fromRaw := strings.TrimSpace(q.Get("from")); fromRaw != "" {
 		parsed, err := parseFlexibleTime(fromRaw, loc, false)
 		if err != nil {
-			return db.QueryParams{}, "", "invalid from timestamp"
+			return db.QueryParams{}, db.PlayFilter{}, "invalid from timestamp"
 		}
 		from = parsed
 	} else if rangeRaw := strings.TrimSpace(q.Get("range")); rangeRaw != "" {
@@ -811,7 +840,19 @@ func parsePlayQueryParams(r *http.Request, store analyticsReader) (db.QueryParam
 	}
 
 	if to.Before(from) {
-		return db.QueryParams{}, "", "to must be >= from"
+		return db.QueryParams{}, db.PlayFilter{}, "to must be >= from"
+	}
+
+	dimType, ok := db.ParsePlayDimType(q.Get("dim_type"))
+	if !ok {
+		return db.QueryParams{}, db.PlayFilter{}, "invalid dim_type"
+	}
+	dimVal := strings.TrimSpace(q.Get("dim_value"))
+	if dimType == "" {
+		if country := strings.TrimSpace(q.Get("country")); country != "" && !strings.EqualFold(country, "all") {
+			dimType = "country"
+			dimVal = country
+		}
 	}
 
 	return db.QueryParams{
@@ -820,7 +861,7 @@ func parsePlayQueryParams(r *http.Request, store analyticsReader) (db.QueryParam
 		TZName:      tzName,
 		Loc:         loc,
 		Granularity: gran,
-	}, strings.TrimSpace(q.Get("country")), ""
+	}, db.PlayFilter{DimType: dimType, DimValue: dimVal}, ""
 }
 
 func writePlayTimeSeriesCSV(w http.ResponseWriter, ts db.PlayTimeSeriesResponse) {

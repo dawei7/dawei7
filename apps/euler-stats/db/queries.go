@@ -103,6 +103,8 @@ type QueryParams struct {
 	Search      string
 	AssetID     int64
 	ItemKey     string
+	Hour        *int
+	DOW         *int
 }
 
 // PollerStatus summarizes the hourly background collector state.
@@ -489,14 +491,15 @@ func (s *Store) GetOverview(ctx context.Context, p QueryParams) (OverviewRespons
 	fromIdx := len(whereArgs) + 1
 	toIdx := len(whereArgs) + 2
 	winArgs := append(append([]any{}, whereArgs...), p.From, p.To)
+	winSliceSQL, winArgs := snapshotSliceConds(p, "s", winArgs)
 	qWindow := fmt.Sprintf(`
 		SELECT
 			COALESCE(SUM(s.delta_downloads), 0)::bigint,
 			COUNT(DISTINCT CASE WHEN s.delta_downloads > 0 THEN s.asset_id END)::int
 		FROM euler_stats.asset_snapshots s
 		JOIN euler_stats.assets a ON a.asset_id = s.asset_id
-		WHERE %s AND s.polled_at >= $%d AND s.polled_at <= $%d
-	`, whereSQL, fromIdx, toIdx)
+		WHERE %s AND s.polled_at >= $%d AND s.polled_at <= $%d%s
+	`, whereSQL, fromIdx, toIdx, winSliceSQL)
 	if err := s.Pool.QueryRow(ctx, qWindow, winArgs...).Scan(
 		&out.Window.DeltaDownloads,
 		&out.Window.ActiveAssetsUsed,
@@ -516,6 +519,7 @@ func (s *Store) GetOverview(ctx context.Context, p QueryParams) (OverviewRespons
 	prevFrom := p.From.Add(-dur)
 	prevTo := p.From
 	prevArgs := append(append([]any{}, whereArgs...), prevFrom, prevTo)
+	prevSliceSQL, prevArgs := snapshotSliceConds(p, "s", prevArgs)
 	var prevHasRows bool
 	var prevDelta int64
 	qPrev := fmt.Sprintf(`
@@ -524,8 +528,8 @@ func (s *Store) GetOverview(ctx context.Context, p QueryParams) (OverviewRespons
 			COALESCE(SUM(s.delta_downloads), 0)::bigint
 		FROM euler_stats.asset_snapshots s
 		JOIN euler_stats.assets a ON a.asset_id = s.asset_id
-		WHERE %s AND s.polled_at >= $%d AND s.polled_at < $%d
-	`, whereSQL, fromIdx, toIdx)
+		WHERE %s AND s.polled_at >= $%d AND s.polled_at < $%d%s
+	`, whereSQL, fromIdx, toIdx, prevSliceSQL)
 	if err := s.Pool.QueryRow(ctx, qPrev, prevArgs...).Scan(&prevHasRows, &prevDelta); err != nil {
 		return out, fmt.Errorf("overview prev window: %w", err)
 	}
@@ -554,20 +558,37 @@ func (s *Store) GetOverview(ctx context.Context, p QueryParams) (OverviewRespons
 	}
 	out.Filters = filters
 
-	// 5. Breakdowns.
-	if out.ByRelease, err = s.queryBreakdown(ctx, "a.release_tag", whereSQL, whereArgs, p.From, p.To, out.AllTime.TotalDownloads); err != nil {
+	// 5. Associative Qlik breakdowns: each facet keeps sibling values visible under the other active filters
+	// so selecting one value highlights it without hiding its alternatives.
+	withoutFacet := func(facet string) QueryParams {
+		cp := p
+		switch facet {
+		case "release":
+			cp.Release = ""
+		case "language":
+			cp.Language = ""
+		case "edition":
+			cp.Edition = ""
+		case "subject":
+			cp.Subject = ""
+		case "category":
+			cp.Category = ""
+		}
+		return cp
+	}
+	if out.ByRelease, err = s.queryBreakdown(ctx, "a.release_tag", withoutFacet("release")); err != nil {
 		return out, err
 	}
-	if out.ByLanguage, err = s.queryBreakdown(ctx, "a.language", whereSQL, whereArgs, p.From, p.To, out.AllTime.TotalDownloads); err != nil {
+	if out.ByLanguage, err = s.queryBreakdown(ctx, "a.language", withoutFacet("language")); err != nil {
 		return out, err
 	}
-	if out.ByEdition, err = s.queryBreakdown(ctx, "a.edition", whereSQL, whereArgs, p.From, p.To, out.AllTime.TotalDownloads); err != nil {
+	if out.ByEdition, err = s.queryBreakdown(ctx, "a.edition", withoutFacet("edition")); err != nil {
 		return out, err
 	}
-	if out.BySubject, err = s.queryBreakdown(ctx, "a.subject", whereSQL, whereArgs, p.From, p.To, out.AllTime.TotalDownloads); err != nil {
+	if out.BySubject, err = s.queryBreakdown(ctx, "a.subject", withoutFacet("subject")); err != nil {
 		return out, err
 	}
-	if out.ByCategory, err = s.queryBreakdown(ctx, "a.category", whereSQL, whereArgs, p.From, p.To, out.AllTime.TotalDownloads); err != nil {
+	if out.ByCategory, err = s.queryBreakdown(ctx, "a.category", withoutFacet("category")); err != nil {
 		return out, err
 	}
 
@@ -663,17 +684,38 @@ func (s *Store) getFilterOptions(ctx context.Context) (FilterOptions, error) {
 	return f, nil
 }
 
+func snapshotSliceConds(p QueryParams, snapAlias string, baseArgs []any) (string, []any) {
+	if p.Hour == nil && p.DOW == nil {
+		return "", baseArgs
+	}
+	tz := p.TZName
+	if tz == "" {
+		tz = "UTC"
+	}
+	args := append(append([]any{}, baseArgs...), tz)
+	tzIdx := len(args)
+	var parts []string
+	if p.Hour != nil {
+		args = append(args, *p.Hour)
+		parts = append(parts, fmt.Sprintf("extract(hour from (%s.polled_at AT TIME ZONE $%d))::int = $%d", snapAlias, tzIdx, len(args)))
+	}
+	if p.DOW != nil {
+		args = append(args, *p.DOW)
+		parts = append(parts, fmt.Sprintf("extract(isodow from (%s.polled_at AT TIME ZONE $%d))::int = $%d", snapAlias, tzIdx, len(args)))
+	}
+	return " AND " + strings.Join(parts, " AND "), args
+}
+
 func (s *Store) queryBreakdown(
 	ctx context.Context,
 	dimCol string,
-	whereSQL string,
-	whereArgs []any,
-	from, to time.Time,
-	grandTotal int64,
+	p QueryParams,
 ) ([]BreakdownItem, error) {
+	whereSQL, whereArgs := buildAssetWhere(p, 1)
 	fromIdx := len(whereArgs) + 1
 	toIdx := len(whereArgs) + 2
-	args := append(append([]any{}, whereArgs...), from, to)
+	args := append(append([]any{}, whereArgs...), p.From, p.To)
+	sliceSQL, args := snapshotSliceConds(p, "s", args)
 
 	q := fmt.Sprintf(`
 		WITH filtered AS (
@@ -685,7 +727,7 @@ func (s *Store) queryBreakdown(
 			SELECT f.dim_key, COALESCE(SUM(s.delta_downloads), 0)::bigint AS window_delta
 			FROM filtered f
 			LEFT JOIN euler_stats.asset_snapshots s
-				ON s.asset_id = f.asset_id AND s.polled_at >= $%d AND s.polled_at <= $%d
+				ON s.asset_id = f.asset_id AND s.polled_at >= $%d AND s.polled_at <= $%d%s
 			GROUP BY f.dim_key
 		)
 		SELECT
@@ -698,7 +740,7 @@ func (s *Store) queryBreakdown(
 		LEFT JOIN deltas d ON d.dim_key = f.dim_key
 		GROUP BY f.dim_key
 		ORDER BY all_time DESC, window_delta DESC, f.dim_key ASC
-	`, dimCol, whereSQL, fromIdx, toIdx)
+	`, dimCol, whereSQL, fromIdx, toIdx, sliceSQL)
 
 	rows, err := s.Pool.Query(ctx, q, args...)
 	if err != nil {
@@ -706,18 +748,25 @@ func (s *Store) queryBreakdown(
 	}
 	defer rows.Close()
 
+	var facetTotal int64
 	out := []BreakdownItem{}
 	for rows.Next() {
 		var item BreakdownItem
 		if err := rows.Scan(&item.Key, &item.AllTimeDownloads, &item.WindowDelta, &item.AssetCount, &item.TotalBytes); err != nil {
 			return nil, err
 		}
-		if grandTotal > 0 {
-			item.SharePct = round2((float64(item.AllTimeDownloads) / float64(grandTotal)) * 100.0)
-		}
+		facetTotal += item.AllTimeDownloads
 		out = append(out, item)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if facetTotal > 0 {
+		for i := range out {
+			out[i].SharePct = round2((float64(out[i].AllTimeDownloads) / float64(facetTotal)) * 100.0)
+		}
+	}
+	return out, nil
 }
 
 // GetTimeSeries returns continuous gap-filled time-series buckets and hourly activity patterns.
@@ -763,6 +812,7 @@ func (s *Store) GetTimeSeries(ctx context.Context, p QueryParams) (TimeSeriesRes
 	// 1. Delta by bucket and group.
 	deltaMap := make(map[int64]map[string]int64)
 	seriesSet := make(map[string]struct{})
+	deltaSliceSQL, deltaArgs := snapshotSliceConds(p, "s", bucketArgs)
 
 	qDelta := fmt.Sprintf(`
 		SELECT
@@ -771,12 +821,12 @@ func (s *Store) GetTimeSeries(ctx context.Context, p QueryParams) (TimeSeriesRes
 			COALESCE(SUM(s.delta_downloads), 0)::bigint AS delta
 		FROM euler_stats.asset_snapshots s
 		JOIN euler_stats.assets a ON a.asset_id = s.asset_id
-		WHERE %s AND s.polled_at >= $%d AND s.polled_at <= $%d
+		WHERE %s AND s.polled_at >= $%d AND s.polled_at <= $%d%s
 		GROUP BY 1, 2
 		ORDER BY 1 ASC
-	`, bucketExpr, grpExpr, whereSQL, fromIdx, toIdx)
+	`, bucketExpr, grpExpr, whereSQL, fromIdx, toIdx, deltaSliceSQL)
 
-	rows, err := s.Pool.Query(ctx, qDelta, bucketArgs...)
+	rows, err := s.Pool.Query(ctx, qDelta, deltaArgs...)
 	if err != nil {
 		return resp, fmt.Errorf("timeseries delta: %w", err)
 	}
@@ -1024,6 +1074,7 @@ func (s *Store) GetAssets(ctx context.Context, p QueryParams, mode AssetMode, so
 	d7Idx := len(whereArgs) + 4
 	now := time.Now().UTC()
 	args := append(append([]any{}, whereArgs...), p.From, p.To, now.Add(-24*time.Hour), now.Add(-7*24*time.Hour))
+	winSliceSQL, args := snapshotSliceConds(p, "s", args)
 
 	orderCol := "all_time_downloads"
 	switch strings.ToLower(strings.TrimSpace(sortBy)) {
@@ -1060,7 +1111,7 @@ func (s *Store) GetAssets(ctx context.Context, p QueryParams, mode AssetMode, so
 			snap_agg AS (
 				SELECT
 					s.asset_id,
-					COALESCE(SUM(CASE WHEN s.polled_at >= $%d AND s.polled_at <= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS window_delta,
+					COALESCE(SUM(CASE WHEN s.polled_at >= $%d AND s.polled_at <= $%d%s THEN s.delta_downloads ELSE 0 END), 0)::bigint AS window_delta,
 					COALESCE(SUM(CASE WHEN s.polled_at >= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS last_24h_delta,
 					COALESCE(SUM(CASE WHEN s.polled_at >= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS last_7d_delta
 				FROM euler_stats.asset_snapshots s
@@ -1099,7 +1150,7 @@ func (s *Store) GetAssets(ctx context.Context, p QueryParams, mode AssetMode, so
 			FROM filtered a
 			LEFT JOIN snap_agg sa ON sa.asset_id = a.asset_id
 			ORDER BY %s %s NULLS LAST, display_title ASC
-		`, whereSQL, fromIdx, toIdx, h24Idx, d7Idx, orderCol, dirSQL)
+		`, whereSQL, fromIdx, toIdx, winSliceSQL, h24Idx, d7Idx, orderCol, dirSQL)
 	} else {
 		q = fmt.Sprintf(`
 			WITH filtered AS (
@@ -1110,7 +1161,7 @@ func (s *Store) GetAssets(ctx context.Context, p QueryParams, mode AssetMode, so
 			snap_agg AS (
 				SELECT
 					s.asset_id,
-					COALESCE(SUM(CASE WHEN s.polled_at >= $%d AND s.polled_at <= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS window_delta,
+					COALESCE(SUM(CASE WHEN s.polled_at >= $%d AND s.polled_at <= $%d%s THEN s.delta_downloads ELSE 0 END), 0)::bigint AS window_delta,
 					COALESCE(SUM(CASE WHEN s.polled_at >= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS last_24h_delta,
 					COALESCE(SUM(CASE WHEN s.polled_at >= $%d THEN s.delta_downloads ELSE 0 END), 0)::bigint AS last_7d_delta
 				FROM euler_stats.asset_snapshots s
@@ -1167,7 +1218,7 @@ func (s *Store) GetAssets(ctx context.Context, p QueryParams, mode AssetMode, so
 				rep.author, rep.license, rep.pages, rep.exercises, rep.included_in_app,
 				rep.size_bytes, rep.download_url, rep.asset_created_at, rep.asset_updated_at
 			ORDER BY %s %s NULLS LAST, display_title ASC
-		`, whereSQL, fromIdx, toIdx, h24Idx, d7Idx, orderCol, dirSQL)
+		`, whereSQL, fromIdx, toIdx, winSliceSQL, h24Idx, d7Idx, orderCol, dirSQL)
 	}
 
 	rows, err := s.Pool.Query(ctx, q, args...)

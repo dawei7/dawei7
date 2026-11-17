@@ -3,11 +3,12 @@ import type {
   AssetRow,
   FilterState,
   Granularity,
+  NotificationLogEntry,
   NotificationSettings,
   NotificationSettingsUpdate,
   NotificationStatusResponse,
-  NotificationLogEntry,
   OverviewResponse,
+  PlayDimFilterType,
   PlayOverviewResponse,
   PlayPollRunRow,
   PlayReviewView,
@@ -40,6 +41,9 @@ function buildQuery(
   if (f.language) params.set('language', f.language);
   if (f.edition) params.set('edition', f.edition);
   if (f.search.trim()) params.set('q', f.search.trim());
+  if (f.itemKey) params.set('item_key', f.itemKey);
+  if (f.hour !== null && f.hour !== undefined) params.set('hour', String(f.hour));
+  if (f.dow !== null && f.dow !== undefined) params.set('dow', String(f.dow));
 
   if (extra) {
     for (const [k, v] of Object.entries(extra)) {
@@ -116,7 +120,8 @@ export interface PlayFilterState {
   from: string;
   to: string;
   tz: string;
-  country: string;
+  dimType: PlayDimFilterType;
+  dimValue: string;
 }
 
 function buildPlayQuery(
@@ -132,7 +137,10 @@ function buildPlayQuery(
   } else {
     params.set('range', f.range);
   }
-  if (f.country) params.set('country', f.country);
+  if (f.dimType && f.dimValue) {
+    params.set('dim_type', f.dimType);
+    params.set('dim_value', f.dimValue);
+  }
   if (extra) {
     for (const [k, v] of Object.entries(extra)) {
       if (v) params.set(k, v);

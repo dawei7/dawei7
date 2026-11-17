@@ -22,6 +22,8 @@ interface AssetDetailModalProps {
   mode: AssetMode;
   filters: FilterState;
   firstPolledAt: string | null;
+  isItemIsolated?: boolean;
+  onIsolateInDashboard?: (asset: AssetRow) => void;
   onClose: () => void;
 }
 
@@ -30,6 +32,8 @@ export function AssetDetailModal({
   mode,
   filters,
   firstPolledAt,
+  isItemIsolated = false,
+  onIsolateInDashboard,
   onClose,
 }: AssetDetailModalProps) {
   const [gran, setGran] = useState<Granularity>(filters.granularity);
@@ -109,13 +113,31 @@ export function AssetDetailModal({
             </p>
           </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-full border border-[#d5cdb8] bg-[#fffcf6] px-3 py-1.5 text-xs font-medium text-[#4a4338] hover:text-[#1c1914] cursor-pointer"
-          >
-            Close
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {onIsolateInDashboard && (
+              <button
+                type="button"
+                onClick={() => {
+                  onIsolateInDashboard(asset);
+                  onClose();
+                }}
+                className={`rounded-full border px-3 py-1.5 text-xs font-medium cursor-pointer transition-colors ${
+                  isItemIsolated
+                    ? 'border-[#1e4636] bg-[#1e4636] text-[#faf7f1]'
+                    : 'border-[#1e4636]/40 bg-[#1e4636]/10 text-[#1e4636] hover:bg-[#1e4636]/20'
+                }`}
+              >
+                {isItemIsolated ? 'Clear Dashboard Filter' : 'Filter Dashboard to Item'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full border border-[#d5cdb8] bg-[#fffcf6] px-3 py-1.5 text-xs font-medium text-[#4a4338] hover:text-[#1c1914] cursor-pointer"
+            >
+              Close
+            </button>
+          </div>
         </div>
 
         {/* Metadata strip */}

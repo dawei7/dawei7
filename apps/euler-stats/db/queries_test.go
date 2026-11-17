@@ -92,4 +92,21 @@ func TestParseGranularityAndGroupBy(t *testing.T) {
 	if _, ok := ParseAssetMode("invalid"); ok {
 		t.Fatalf("expected invalid asset mode to fail")
 	}
+
+	if dt, ok := ParsePlayDimType("app_version"); !ok || dt != "app_version" {
+		t.Fatalf("expected app_version dim type, got %q %v", dt, ok)
+	}
+	if dt, ok := ParsePlayDimType("traffic_source"); !ok || dt != "traffic_source" {
+		t.Fatalf("expected traffic_source dim type, got %q %v", dt, ok)
+	}
+	if _, ok := ParsePlayDimType("bogus"); ok {
+		t.Fatalf("expected invalid dim type to fail")
+	}
+
+	hr := 3
+	dow := 2
+	sqlCond, args := snapshotSliceConds(QueryParams{TZName: "Europe/Zurich", Hour: &hr, DOW: &dow}, "s", []any{"arg1"})
+	if len(args) != 4 || args[1] != "Europe/Zurich" || args[2] != 3 || args[3] != 2 || sqlCond == "" {
+		t.Fatalf("unexpected snapshot slice SQL/args: %q %+v", sqlCond, args)
+	}
 }

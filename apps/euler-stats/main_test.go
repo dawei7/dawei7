@@ -17,8 +17,11 @@ import (
 )
 
 type fakeAnalyticsReader struct {
-	lastParams db.QueryParams
-	pingErr    error
+	lastParams     db.QueryParams
+	lastPlayFilter db.PlayFilter
+	lastPlayFrom   time.Time
+	lastPlayTo     time.Time
+	pingErr        error
 }
 
 func (f *fakeAnalyticsReader) Ping(context.Context) error { return f.pingErr }
@@ -82,7 +85,10 @@ func (f *fakeAnalyticsReader) PlayDateBounds(context.Context) (*time.Time, *time
 	return &t, &t, nil
 }
 
-func (f *fakeAnalyticsReader) GetPlayOverview(_ context.Context, pkgName string, _, _ time.Time, _ string, enabled bool) (db.PlayOverviewResponse, error) {
+func (f *fakeAnalyticsReader) GetPlayOverview(_ context.Context, pkgName string, fromDate, toDate time.Time, filter db.PlayFilter, enabled bool) (db.PlayOverviewResponse, error) {
+	f.lastPlayFrom = fromDate
+	f.lastPlayTo = toDate
+	f.lastPlayFilter = filter
 	var ov db.PlayOverviewResponse
 	ov.Sync.PackageName = pkgName
 	ov.Sync.Enabled = enabled
@@ -90,7 +96,12 @@ func (f *fakeAnalyticsReader) GetPlayOverview(_ context.Context, pkgName string,
 	return ov, nil
 }
 
-func (f *fakeAnalyticsReader) GetPlayTimeSeries(_ context.Context, _ string, gran db.Granularity, _, _ time.Time, _ *time.Location, tzName, country string) (db.PlayTimeSeriesResponse, error) {
+func (f *fakeAnalyticsReader) GetPlayTimeSeries(_ context.Context, _ string, gran db.Granularity, _, _ time.Time, _ *time.Location, tzName string, filter db.PlayFilter) (db.PlayTimeSeriesResponse, error) {
+	f.lastPlayFilter = filter
+	country := ""
+	if filter.DimType == "country" {
+		country = filter.DimValue
+	}
 	return db.PlayTimeSeriesResponse{
 		Granularity: gran,
 		Timezone:    tzName,
@@ -255,7 +266,46 @@ func TestHandlersValidationCSVAndAdminAuth(t *testing.T) {
 		t.Fatalf("unexpected play CSV response (%d): %s", recPlayCSV.Code, recPlayCSV.Body.String())
 	}
 
-	// 7. Notifications endpoints
+	// 7. Interactive Qlik cross-filter params (hour, dow, dim_type, calendar date normalization)
+	reqSlice := httptest.NewRequest(http.MethodGet, "/api/overview?granularity=hour&tz=Europe/Zurich&hour=3&dow=2", nil)
+	recSlice := httptest.NewRecorder()
+	mux.ServeHTTP(recSlice, reqSlice)
+	if recSlice.Code != http.StatusOK || reader.lastParams.Hour == nil || *reader.lastParams.Hour != 3 || reader.lastParams.DOW == nil || *reader.lastParams.DOW != 2 {
+		t.Fatalf("expected hour=3 dow=2, got code=%d params=%+v", recSlice.Code, reader.lastParams)
+	}
+
+	reqBadHour := httptest.NewRequest(http.MethodGet, "/api/overview?hour=25", nil)
+	recBadHour := httptest.NewRecorder()
+	mux.ServeHTTP(recBadHour, reqBadHour)
+	if recBadHour.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on invalid hour, got %d", recBadHour.Code)
+	}
+
+	reqPlayDim := httptest.NewRequest(http.MethodGet, "/api/play/overview?granularity=day&tz=Europe/Zurich&from=2026-11-09&to=2026-11-09&dim_type=app_version&dim_value=60", nil)
+	recPlayDim := httptest.NewRecorder()
+	mux.ServeHTTP(recPlayDim, reqPlayDim)
+	if recPlayDim.Code != http.StatusOK || reader.lastPlayFilter.DimType != "app_version" || reader.lastPlayFilter.DimValue != "60" {
+		t.Fatalf("unexpected play dim filter: code=%d filter=%+v", recPlayDim.Code, reader.lastPlayFilter)
+	}
+	if reader.lastPlayFrom.Format("2006-01-02") != "2026-11-09" || reader.lastPlayTo.Format("2006-01-02") != "2026-11-09" {
+		t.Fatalf("expected calendar date 2026-11-09 preserved across Zurich TZ, got %s..%s", reader.lastPlayFrom, reader.lastPlayTo)
+	}
+
+	reqPlayTraffic := httptest.NewRequest(http.MethodGet, "/api/play/overview?granularity=day&tz=Europe/Zurich&dim_type=traffic_source&dim_value=Other", nil)
+	recPlayTraffic := httptest.NewRecorder()
+	mux.ServeHTTP(recPlayTraffic, reqPlayTraffic)
+	if recPlayTraffic.Code != http.StatusOK || reader.lastPlayFilter.DimType != "traffic_source" || reader.lastPlayFilter.DimValue != "Other" {
+		t.Fatalf("unexpected play traffic_source filter: code=%d filter=%+v", recPlayTraffic.Code, reader.lastPlayFilter)
+	}
+
+	reqBadPlayDim := httptest.NewRequest(http.MethodGet, "/api/play/overview?dim_type=bogus&dim_value=1", nil)
+	recBadPlayDim := httptest.NewRecorder()
+	mux.ServeHTTP(recBadPlayDim, reqBadPlayDim)
+	if recBadPlayDim.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 on invalid dim_type, got %d", recBadPlayDim.Code)
+	}
+
+	// 8. Notifications endpoints
 	reqNotifGet := httptest.NewRequest(http.MethodGet, "/api/notifications", nil)
 	recNotifGet := httptest.NewRecorder()
 	mux.ServeHTTP(recNotifGet, reqNotifGet)

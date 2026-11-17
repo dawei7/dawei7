@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { MetricMode, TimeSeriesBucket, TimeSeriesResponse } from '../lib/types';
+import type {
+  MetricMode,
+  TimeRangeSelection,
+  TimeSeriesBucket,
+  TimeSeriesResponse,
+} from '../lib/types';
 import { formatNumber, formatTimestamp, seriesColor, seriesLabel } from '../lib/format';
+import { buildBucketSelection, isBucketInSelection } from '../lib/chartSelection';
+import { useBucketBrush } from '../lib/useBucketBrush';
 
 interface TimeSeriesChartProps {
   data: TimeSeriesResponse;
@@ -9,6 +16,11 @@ interface TimeSeriesChartProps {
   firstPolledAt: string | null;
   baselineTotal: number;
   tz: string;
+  selectedRange?: TimeRangeSelection | null;
+  onSelectRange?: (sel: TimeRangeSelection | null) => void;
+  activeSeriesKey?: string;
+  legendKeys?: string[];
+  onToggleSeries?: (key: string) => void;
 }
 
 export function TimeSeriesChart({
@@ -18,10 +30,14 @@ export function TimeSeriesChart({
   firstPolledAt,
   baselineTotal,
   tz,
+  selectedRange = null,
+  onSelectRange,
+  activeSeriesKey = '',
+  legendKeys,
+  onToggleSeries,
 }: TimeSeriesChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(860);
-  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -40,11 +56,31 @@ export function TimeSeriesChart({
   const isNarrow = width < 520;
   const buckets = data.buckets;
   const keys = data.series_keys.length > 0 ? data.series_keys : ['total'];
+  const displayLegendKeys =
+    legendKeys && legendKeys.length > 0 ? legendKeys : keys;
 
   const height = isNarrow ? 225 : 300;
   const margin = { top: 14, right: 10, bottom: 34, left: isNarrow ? 34 : 48 };
   const plotW = Math.max(180, width - margin.left - margin.right);
   const plotH = height - margin.top - margin.bottom;
+
+  const handleBrushSelect = (loIdx: number, hiIdx: number) => {
+    if (!onSelectRange) return;
+    const next = buildBucketSelection(buckets, loIdx, hiIdx, data.granularity, tz, false);
+    if (!next) return;
+    if (selectedRange && selectedRange.from === next.from && selectedRange.to === next.to) {
+      onSelectRange(null);
+    } else {
+      onSelectRange(next);
+    }
+  };
+
+  const { hoverIdx, setHoverIdx, dragBand, svgHandlers } = useBucketBrush({
+    count: buckets.length,
+    marginLeft: margin.left,
+    plotW,
+    onSelectRange: onSelectRange ? handleBrushSelect : undefined,
+  });
 
   const { maxVal, hasAnyDelta, cumPoints } = useMemo(() => {
     let m = 0;
@@ -104,41 +140,72 @@ export function TimeSeriesChart({
 
   const hoveredBucket: TimeSeriesBucket | null =
     hoverIdx !== null && buckets[hoverIdx] ? buckets[hoverIdx] : null;
-
-  const selectAtClientX = (clientX: number, rectLeft: number) => {
-    if (buckets.length === 0) return;
-    const relX = clientX - rectLeft - margin.left;
-    if (relX < 0 || relX > plotW) {
-      setHoverIdx(null);
-      return;
-    }
-    const idx = Math.min(buckets.length - 1, Math.max(0, Math.floor(relX / barStep)));
-    setHoverIdx(idx);
-  };
+  const hasSelection = selectedRange !== null;
 
   return (
     <div className="rounded-2xl border border-[#d5cdb8] bg-[#fffcf6]/85 p-4 sm:p-5 shadow-xs">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
         <div>
-          <h2 className="text-base sm:text-lg font-medium text-[#1c1914]">
-            {metric === 'delta' ? 'Downloads Over Time' : 'Cumulative Total Downloads'}
-          </h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base sm:text-lg font-medium text-[#1c1914]">
+              {metric === 'delta' ? 'Downloads Over Time' : 'Cumulative Total Downloads'}
+            </h2>
+            {selectedRange && onSelectRange && (
+              <button
+                type="button"
+                onClick={() => onSelectRange(null)}
+                className="inline-flex items-center gap-1 rounded-full bg-[#1e4636] px-2.5 py-0.5 text-[11px] font-medium text-[#faf7f1] hover:bg-[#143028] cursor-pointer"
+                title="Clear chart time selection"
+              >
+                <span>{selectedRange.label}</span>
+                <span>×</span>
+              </button>
+            )}
+          </div>
           <p className="text-[11px] sm:text-xs text-[#6e6558] mt-0.5">
             <strong>{data.granularity}</strong> · {data.timezone} · {buckets.length} buckets
+            {onSelectRange ? ' · Click or drag bars to filter' : ''}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <div className="flex flex-wrap items-center gap-2.5 text-[11px] text-[#4a4338]">
-            {keys.map((k, idx) => (
-              <span key={k} className="inline-flex items-center gap-1">
-                <span
-                  className="h-2.5 w-2.5 rounded-xs"
-                  style={{ backgroundColor: seriesColor(k, idx) }}
-                />
-                {seriesLabel(k)}
-              </span>
-            ))}
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#4a4338]">
+            {displayLegendKeys.map((k, idx) => {
+              const canFilter = Boolean(onToggleSeries && data.group_by !== 'none' && k !== 'total');
+              const isActive = activeSeriesKey === k;
+              const isDimmed = Boolean(activeSeriesKey && !isActive);
+              if (!canFilter) {
+                return (
+                  <span key={k} className="inline-flex items-center gap-1 px-1.5 py-0.5">
+                    <span
+                      className="h-2.5 w-2.5 rounded-xs"
+                      style={{ backgroundColor: seriesColor(k, idx) }}
+                    />
+                    {seriesLabel(k)}
+                  </span>
+                );
+              }
+              return (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => onToggleSeries?.(k)}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 transition-all cursor-pointer ${
+                    isActive
+                      ? 'border-[#1e4636] bg-[#1e4636]/12 text-[#1e4636] font-semibold'
+                      : isDimmed
+                        ? 'border-[#e3dccb] bg-[#f7f3ea] opacity-45 hover:opacity-85'
+                        : 'border-[#d5cdb8] bg-[#f7f3ea] hover:border-[#1e4636]'
+                  }`}
+                >
+                  <span
+                    className="h-2.5 w-2.5 rounded-xs"
+                    style={{ backgroundColor: seriesColor(k, idx) }}
+                  />
+                  {seriesLabel(k)}
+                </button>
+              );
+            })}
           </div>
 
           <div className="inline-flex rounded-full border border-[#d5cdb8] bg-[#f3eee4] p-0.5 text-xs">
@@ -212,19 +279,8 @@ export function TimeSeriesChart({
         <svg
           width={width}
           height={height}
-          className="overflow-visible block"
-          onMouseMove={(e) => selectAtClientX(e.clientX, e.currentTarget.getBoundingClientRect().left)}
-          onMouseLeave={() => setHoverIdx(null)}
-          onTouchStart={(e) => {
-            if (e.touches[0]) {
-              selectAtClientX(e.touches[0].clientX, e.currentTarget.getBoundingClientRect().left);
-            }
-          }}
-          onTouchMove={(e) => {
-            if (e.touches[0]) {
-              selectAtClientX(e.touches[0].clientX, e.currentTarget.getBoundingClientRect().left);
-            }
-          }}
+          className={`overflow-visible block ${onSelectRange ? 'cursor-crosshair' : ''}`}
+          {...svgHandlers}
         >
           {yTicks.map((tick) => {
             const y = margin.top + yScale(tick);
@@ -250,6 +306,46 @@ export function TimeSeriesChart({
             );
           })}
 
+          {hasSelection &&
+            buckets.map((b, idx) => {
+              if (!isBucketInSelection(b.timestamp, selectedRange, tz)) return null;
+              return (
+                <g key={`sel-${b.timestamp}`}>
+                  <rect
+                    x={margin.left + idx * barStep}
+                    y={margin.top}
+                    width={barStep}
+                    height={plotH}
+                    fill="#1e4636"
+                    fillOpacity={0.11}
+                  />
+                  <line
+                    x1={margin.left + idx * barStep}
+                    x2={margin.left + (idx + 1) * barStep}
+                    y1={margin.top}
+                    y2={margin.top}
+                    stroke="#1e4636"
+                    strokeWidth={2}
+                  />
+                </g>
+              );
+            })}
+
+          {dragBand && (
+            <rect
+              x={margin.left + dragBand.loIdx * barStep}
+              y={margin.top}
+              width={(dragBand.hiIdx - dragBand.loIdx + 1) * barStep}
+              height={plotH}
+              fill="#1e4636"
+              fillOpacity={0.16}
+              stroke="#1e4636"
+              strokeWidth={1.5}
+              strokeDasharray="4 2"
+              rx={3}
+            />
+          )}
+
           {hoverIdx !== null && buckets[hoverIdx] && (
             <rect
               x={margin.left + hoverIdx * barStep}
@@ -266,6 +362,9 @@ export function TimeSeriesChart({
             buckets.map((b, idx) => {
               let runningY = plotH;
               const x = xCenter(idx) - barW / 2;
+              const inSel =
+                !hasSelection || isBucketInSelection(b.timestamp, selectedRange, tz);
+              const barOpacity = inSel ? (hoverIdx === idx ? 1 : 0.92) : 0.24;
               return (
                 <g key={b.timestamp}>
                   {keys.map((k, kIdx) => {
@@ -281,7 +380,7 @@ export function TimeSeriesChart({
                         width={barW}
                         height={segH}
                         fill={seriesColor(k, kIdx)}
-                        fillOpacity={hoverIdx === idx ? 1 : 0.88}
+                        fillOpacity={barOpacity}
                         rx={1.5}
                       />
                     );
@@ -303,17 +402,23 @@ export function TimeSeriesChart({
                   strokeLinecap="round"
                 />
               )}
-              {cumPoints.map((pt) => (
-                <circle
-                  key={pt.idx}
-                  cx={xCenter(pt.idx)}
-                  cy={margin.top + yScale(pt.val)}
-                  r={hoverIdx === pt.idx ? 5 : cumPoints.length <= 20 ? 3.5 : 2}
-                  fill="#fffcf6"
-                  stroke="#1e4636"
-                  strokeWidth={2}
-                />
-              ))}
+              {cumPoints.map((pt) => {
+                const inSel =
+                  !hasSelection ||
+                  isBucketInSelection(buckets[pt.idx].timestamp, selectedRange, tz);
+                return (
+                  <circle
+                    key={pt.idx}
+                    cx={xCenter(pt.idx)}
+                    cy={margin.top + yScale(pt.val)}
+                    r={hoverIdx === pt.idx || (hasSelection && inSel) ? 5 : cumPoints.length <= 20 ? 3.5 : 2}
+                    fill={hasSelection && inSel ? '#1e4636' : '#fffcf6'}
+                    stroke="#1e4636"
+                    strokeOpacity={inSel ? 1 : 0.3}
+                    strokeWidth={2}
+                  />
+                );
+              })}
             </g>
           )}
 

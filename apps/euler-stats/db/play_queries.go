@@ -200,12 +200,51 @@ func (s *Store) PlayDateBounds(ctx context.Context) (*time.Time, *time.Time, err
 	return minD, maxD, nil
 }
 
+// PlayFilter selects an optional Play Console breakdown slice across overview & time-series queries.
+type PlayFilter struct {
+	DimType  string
+	DimValue string
+}
+
+// ParsePlayDimType validates a Play Console dimension filter name.
+func ParsePlayDimType(s string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "", "overview", "all":
+		return "", true
+	case "country", "device", "app_version", "os_version", "language", "carrier", "traffic_source":
+		return strings.ToLower(strings.TrimSpace(s)), true
+	default:
+		return "", false
+	}
+}
+
+func resolvePlayDim(f PlayFilter) (string, string) {
+	dt, ok := ParsePlayDimType(f.DimType)
+	val := strings.TrimSpace(f.DimValue)
+	if !ok || dt == "" || val == "" || (dt == "country" && strings.EqualFold(val, "all")) {
+		return "overview", ""
+	}
+	return dt, val
+}
+
+func playDimHasInstalls(dimType string) bool {
+	return dimType != "traffic_source"
+}
+
+func playDimHasStorePerf(dimType string) bool {
+	return dimType == "overview" || dimType == "country" || dimType == "traffic_source"
+}
+
+func playDimHasCrashes(dimType string) bool {
+	return dimType == "overview" || dimType == "app_version" || dimType == "device" || dimType == "os_version"
+}
+
 // GetPlayOverview returns Play Store KPIs, breakdowns across all dimensions, tracks, and sync status.
 func (s *Store) GetPlayOverview(
 	ctx context.Context,
 	pkgName string,
 	fromDate, toDate time.Time,
-	country string,
+	filter PlayFilter,
 	playEnabled bool,
 ) (PlayOverviewResponse, error) {
 	var out PlayOverviewResponse
@@ -218,138 +257,167 @@ func (s *Store) GetPlayOverview(
 	}
 	out.Sync = syncStatus
 
-	dimType := "overview"
-	dimVal := ""
-	if country != "" && !strings.EqualFold(country, "all") {
-		dimType = "country"
-		dimVal = country
+	dimType, dimVal := resolvePlayDim(filter)
+
+	// 1. All-time totals from daily reports (not available for traffic_source).
+	if playDimHasInstalls(dimType) {
+		err = s.Pool.QueryRow(ctx, `
+			SELECT
+				COALESCE(SUM(daily_device_installs), 0)::bigint,
+				COALESCE(SUM(daily_device_uninstalls), 0)::bigint,
+				COALESCE(SUM(daily_device_upgrades), 0)::bigint,
+				COALESCE(SUM(daily_user_installs), 0)::bigint,
+				COALESCE(SUM(daily_user_uninstalls), 0)::bigint,
+				COALESCE(SUM(install_events), 0)::bigint,
+				COALESCE(SUM(update_events), 0)::bigint,
+				COALESCE(SUM(uninstall_events), 0)::bigint
+			FROM euler_stats.play_installs_daily
+			WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
+		`, pkgName, dimType, dimVal).Scan(
+			&out.Totals.DeviceInstalls, &out.Totals.DeviceUninstalls, &out.Totals.DeviceUpgrades,
+			&out.Totals.UserInstalls, &out.Totals.UserUninstalls,
+			&out.Totals.InstallEvents, &out.Totals.UpdateEvents, &out.Totals.UninstallEvents,
+		)
+		if err != nil {
+			return out, fmt.Errorf("play totals installs: %w", err)
+		}
+
+		// Latest active devices count.
+		_ = s.Pool.QueryRow(ctx, `
+			SELECT active_device_installs
+			FROM euler_stats.play_installs_daily
+			WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
+			ORDER BY report_date DESC
+			LIMIT 1
+		`, pkgName, dimType, dimVal).Scan(&out.Totals.ActiveDevices)
+
+		// Window installs.
+		err = s.Pool.QueryRow(ctx, `
+			SELECT
+				COALESCE(SUM(daily_device_installs), 0)::bigint,
+				COALESCE(SUM(daily_device_uninstalls), 0)::bigint,
+				COALESCE(SUM(daily_user_installs), 0)::bigint,
+				COALESCE(SUM(daily_user_uninstalls), 0)::bigint,
+				COALESCE(SUM(install_events), 0)::bigint,
+				COALESCE(SUM(update_events), 0)::bigint
+			FROM euler_stats.play_installs_daily
+			WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
+			  AND report_date >= $4::date AND report_date <= $5::date
+		`, pkgName, dimType, dimVal, fromDate, toDate).Scan(
+			&out.Window.DeviceInstalls, &out.Window.DeviceUninstalls,
+			&out.Window.UserInstalls, &out.Window.UserUninstalls,
+			&out.Window.InstallEvents, &out.Window.UpdateEvents,
+		)
+		if err != nil {
+			return out, fmt.Errorf("play window installs: %w", err)
+		}
 	}
 
-	// 1. All-time totals from daily reports.
-	err = s.Pool.QueryRow(ctx, `
-		SELECT
-			COALESCE(SUM(daily_device_installs), 0)::bigint,
-			COALESCE(SUM(daily_device_uninstalls), 0)::bigint,
-			COALESCE(SUM(daily_device_upgrades), 0)::bigint,
-			COALESCE(SUM(daily_user_installs), 0)::bigint,
-			COALESCE(SUM(daily_user_uninstalls), 0)::bigint,
-			COALESCE(SUM(install_events), 0)::bigint,
-			COALESCE(SUM(update_events), 0)::bigint,
-			COALESCE(SUM(uninstall_events), 0)::bigint
-		FROM euler_stats.play_installs_daily
-		WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
-	`, pkgName, dimType, dimVal).Scan(
-		&out.Totals.DeviceInstalls, &out.Totals.DeviceUninstalls, &out.Totals.DeviceUpgrades,
-		&out.Totals.UserInstalls, &out.Totals.UserUninstalls,
-		&out.Totals.InstallEvents, &out.Totals.UpdateEvents, &out.Totals.UninstallEvents,
-	)
-	if err != nil {
-		return out, fmt.Errorf("play totals installs: %w", err)
-	}
+	// Store performance (Play exports store visitors/acquisitions by country and traffic_source only).
+	if playDimHasStorePerf(dimType) {
+		storeWhere := "package_name = $1 AND dimension_type = 'country'"
+		storeArgs := []any{pkgName}
+		if dimType == "country" {
+			storeWhere += " AND dimension_value = $2"
+			storeArgs = append(storeArgs, dimVal)
+		} else if dimType == "traffic_source" {
+			storeWhere = "package_name = $1 AND dimension_type = 'traffic_source' AND dimension_value = $2"
+			storeArgs = append(storeArgs, dimVal)
+		}
+		err = s.Pool.QueryRow(ctx, fmt.Sprintf(`
+			SELECT COALESCE(SUM(visitors), 0)::bigint, COALESCE(SUM(acquisitions), 0)::bigint
+			FROM euler_stats.play_store_performance_daily
+			WHERE %s
+		`, storeWhere), storeArgs...).Scan(&out.Totals.StoreVisitors, &out.Totals.StoreAcquisitions)
+		if err != nil {
+			return out, fmt.Errorf("play totals store perf: %w", err)
+		}
+		if out.Totals.StoreVisitors > 0 {
+			out.Totals.ConversionRate = round2((float64(out.Totals.StoreAcquisitions) / float64(out.Totals.StoreVisitors)) * 100.0)
+		}
 
-	// Latest active devices count.
-	_ = s.Pool.QueryRow(ctx, `
-		SELECT active_device_installs
-		FROM euler_stats.play_installs_daily
-		WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
-		ORDER BY report_date DESC
-		LIMIT 1
-	`, pkgName, dimType, dimVal).Scan(&out.Totals.ActiveDevices)
-
-	// Window installs.
-	err = s.Pool.QueryRow(ctx, `
-		SELECT
-			COALESCE(SUM(daily_device_installs), 0)::bigint,
-			COALESCE(SUM(daily_device_uninstalls), 0)::bigint,
-			COALESCE(SUM(daily_user_installs), 0)::bigint,
-			COALESCE(SUM(daily_user_uninstalls), 0)::bigint,
-			COALESCE(SUM(install_events), 0)::bigint,
-			COALESCE(SUM(update_events), 0)::bigint
-		FROM euler_stats.play_installs_daily
-		WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
-		  AND report_date >= $4::date AND report_date <= $5::date
-	`, pkgName, dimType, dimVal, fromDate, toDate).Scan(
-		&out.Window.DeviceInstalls, &out.Window.DeviceUninstalls,
-		&out.Window.UserInstalls, &out.Window.UserUninstalls,
-		&out.Window.InstallEvents, &out.Window.UpdateEvents,
-	)
-	if err != nil {
-		return out, fmt.Errorf("play window installs: %w", err)
-	}
-
-	// Store performance (all-time & window).
-	storeWhere := "package_name = $1 AND dimension_type = 'country'"
-	storeArgs := []any{pkgName}
-	if dimType == "country" {
-		storeWhere += " AND dimension_value = $2"
-		storeArgs = append(storeArgs, dimVal)
-	}
-	err = s.Pool.QueryRow(ctx, fmt.Sprintf(`
-		SELECT COALESCE(SUM(visitors), 0)::bigint, COALESCE(SUM(acquisitions), 0)::bigint
-		FROM euler_stats.play_store_performance_daily
-		WHERE %s
-	`, storeWhere), storeArgs...).Scan(&out.Totals.StoreVisitors, &out.Totals.StoreAcquisitions)
-	if err != nil {
-		return out, fmt.Errorf("play totals store perf: %w", err)
-	}
-	if out.Totals.StoreVisitors > 0 {
-		out.Totals.ConversionRate = round2((float64(out.Totals.StoreAcquisitions) / float64(out.Totals.StoreVisitors)) * 100.0)
-	}
-
-	winStoreArgs := append(append([]any{}, storeArgs...), fromDate, toDate)
-	fIdx, tIdx := len(storeArgs)+1, len(storeArgs)+2
-	err = s.Pool.QueryRow(ctx, fmt.Sprintf(`
-		SELECT COALESCE(SUM(visitors), 0)::bigint, COALESCE(SUM(acquisitions), 0)::bigint
-		FROM euler_stats.play_store_performance_daily
-		WHERE %s AND report_date >= $%d::date AND report_date <= $%d::date
-	`, storeWhere, fIdx, tIdx), winStoreArgs...).Scan(&out.Window.StoreVisitors, &out.Window.StoreAcquisitions)
-	if err != nil {
-		return out, fmt.Errorf("play window store perf: %w", err)
-	}
-	if out.Window.StoreVisitors > 0 {
-		out.Window.ConversionRate = round2((float64(out.Window.StoreAcquisitions) / float64(out.Window.StoreVisitors)) * 100.0)
+		winStoreArgs := append(append([]any{}, storeArgs...), fromDate, toDate)
+		fIdx, tIdx := len(storeArgs)+1, len(storeArgs)+2
+		err = s.Pool.QueryRow(ctx, fmt.Sprintf(`
+			SELECT COALESCE(SUM(visitors), 0)::bigint, COALESCE(SUM(acquisitions), 0)::bigint
+			FROM euler_stats.play_store_performance_daily
+			WHERE %s AND report_date >= $%d::date AND report_date <= $%d::date
+		`, storeWhere, fIdx, tIdx), winStoreArgs...).Scan(&out.Window.StoreVisitors, &out.Window.StoreAcquisitions)
+		if err != nil {
+			return out, fmt.Errorf("play window store perf: %w", err)
+		}
+		if out.Window.StoreVisitors > 0 {
+			out.Window.ConversionRate = round2((float64(out.Window.StoreAcquisitions) / float64(out.Window.StoreVisitors)) * 100.0)
+		}
 	}
 
 	// Ratings & reviews count.
-	_ = s.Pool.QueryRow(ctx, `
-		SELECT total_avg_rating
-		FROM euler_stats.play_ratings_daily
-		WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3 AND total_avg_rating IS NOT NULL
-		ORDER BY report_date DESC
-		LIMIT 1
-	`, pkgName, dimType, dimVal).Scan(&out.Totals.TotalAvgRating)
+	if playDimHasInstalls(dimType) {
+		_ = s.Pool.QueryRow(ctx, `
+			SELECT total_avg_rating
+			FROM euler_stats.play_ratings_daily
+			WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3 AND total_avg_rating IS NOT NULL
+			ORDER BY report_date DESC
+			LIMIT 1
+		`, pkgName, dimType, dimVal).Scan(&out.Totals.TotalAvgRating)
 
-	_ = s.Pool.QueryRow(ctx, `
-		SELECT AVG(daily_avg_rating)
-		FROM euler_stats.play_ratings_daily
-		WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
-		  AND report_date >= $4::date AND report_date <= $5::date
-		  AND daily_avg_rating IS NOT NULL AND daily_avg_rating > 0
-	`, pkgName, dimType, dimVal, fromDate, toDate).Scan(&out.Window.AvgRating)
+		_ = s.Pool.QueryRow(ctx, `
+			SELECT AVG(daily_avg_rating)
+			FROM euler_stats.play_ratings_daily
+			WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
+			  AND report_date >= $4::date AND report_date <= $5::date
+			  AND daily_avg_rating IS NOT NULL AND daily_avg_rating > 0
+		`, pkgName, dimType, dimVal, fromDate, toDate).Scan(&out.Window.AvgRating)
+	}
 
-	_ = s.Pool.QueryRow(ctx, `SELECT COUNT(*)::int FROM euler_stats.play_reviews WHERE package_name = $1`, pkgName).
+	revWhere := "package_name = $1"
+	revArgs := []any{pkgName}
+	switch dimType {
+	case "app_version":
+		revWhere += " AND app_version_code = $2"
+		revArgs = append(revArgs, dimVal)
+	case "device":
+		revWhere += " AND device = $2"
+		revArgs = append(revArgs, dimVal)
+	case "language":
+		revWhere += " AND (lower(reviewer_language) = lower($2) OR lower(split_part(reviewer_language, '-', 1)) = lower(split_part($2, '_', 1)))"
+		revArgs = append(revArgs, dimVal)
+	}
+	_ = s.Pool.QueryRow(ctx, fmt.Sprintf(`SELECT COUNT(*)::int FROM euler_stats.play_reviews WHERE %s`, revWhere), revArgs...).
 		Scan(&out.Totals.ReviewsCount)
 
-	// Crashes (overview CSV + Reporting API hourly error count).
-	_ = s.Pool.QueryRow(ctx, `
-		SELECT COALESCE(SUM(daily_crashes), 0)::bigint, COALESCE(SUM(daily_anrs), 0)::bigint
-		FROM euler_stats.play_crashes_daily
-		WHERE package_name = $1 AND dimension_type = 'overview'
-	`, pkgName).Scan(&out.Totals.TotalCrashes, &out.Totals.TotalANRs)
+	// Crashes (overview, app_version, device, os_version CSVs + Reporting API hourly error count).
+	if playDimHasCrashes(dimType) {
+		_ = s.Pool.QueryRow(ctx, `
+			SELECT COALESCE(SUM(daily_crashes), 0)::bigint, COALESCE(SUM(daily_anrs), 0)::bigint
+			FROM euler_stats.play_crashes_daily
+			WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
+		`, pkgName, dimType, dimVal).Scan(&out.Totals.TotalCrashes, &out.Totals.TotalANRs)
 
-	_ = s.Pool.QueryRow(ctx, `
-		SELECT COALESCE(SUM(daily_crashes), 0)::bigint, COALESCE(SUM(daily_anrs), 0)::bigint
-		FROM euler_stats.play_crashes_daily
-		WHERE package_name = $1 AND dimension_type = 'overview'
-		  AND report_date >= $2::date AND report_date <= $3::date
-	`, pkgName, fromDate, toDate).Scan(&out.Window.Crashes, &out.Window.ANRs)
+		_ = s.Pool.QueryRow(ctx, `
+			SELECT COALESCE(SUM(daily_crashes), 0)::bigint, COALESCE(SUM(daily_anrs), 0)::bigint
+			FROM euler_stats.play_crashes_daily
+			WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
+			  AND report_date >= $4::date AND report_date <= $5::date
+		`, pkgName, dimType, dimVal, fromDate, toDate).Scan(&out.Window.Crashes, &out.Window.ANRs)
+	}
 
-	_ = s.Pool.QueryRow(ctx, `
-		SELECT COALESCE(SUM((metrics_json->>'errorReportCount')::double precision), 0)::bigint
-		FROM euler_stats.play_vitals_timeseries
-		WHERE package_name = $1 AND metric_set = 'errorCountMetricSet'
-		  AND aggregation_period = 'HOURLY' AND dimension_key = 'reportType'
-	`, pkgName).Scan(&out.Totals.HourlyErrorsTotal)
+	if dimType == "app_version" {
+		_ = s.Pool.QueryRow(ctx, `
+			SELECT COALESCE(SUM((metrics_json->>'errorReportCount')::double precision), 0)::bigint
+			FROM euler_stats.play_vitals_timeseries
+			WHERE package_name = $1 AND metric_set = 'errorCountMetricSet'
+			  AND aggregation_period = 'HOURLY' AND dimension_key = 'reportType,versionCode'
+			  AND dimension_value IN ('CRASH,' || $2, 'ANR,' || $2)
+		`, pkgName, dimVal).Scan(&out.Totals.HourlyErrorsTotal)
+	} else if dimType == "overview" {
+		_ = s.Pool.QueryRow(ctx, `
+			SELECT COALESCE(SUM((metrics_json->>'errorReportCount')::double precision), 0)::bigint
+			FROM euler_stats.play_vitals_timeseries
+			WHERE package_name = $1 AND metric_set = 'errorCountMetricSet'
+			  AND aggregation_period = 'HOURLY' AND dimension_key = 'reportType'
+		`, pkgName).Scan(&out.Totals.HourlyErrorsTotal)
+	}
 
 	// Tracks.
 	if out.Tracks, err = s.queryPlayTracks(ctx, pkgName); err != nil {
@@ -634,12 +702,18 @@ func (s *Store) GetPlayTimeSeries(
 	gran Granularity,
 	from, to time.Time,
 	loc *time.Location,
-	tzName, country string,
+	tzName string,
+	filter PlayFilter,
 ) (PlayTimeSeriesResponse, error) {
+	dimType, dimVal := resolvePlayDim(filter)
+	countryLabel := ""
+	if dimType == "country" {
+		countryLabel = dimVal
+	}
 	resp := PlayTimeSeriesResponse{
 		Granularity: gran,
 		Timezone:    tzName,
-		Country:     country,
+		Country:     countryLabel,
 		From:        from,
 		To:          to,
 		Points:      []PlayTimeSeriesPoint{},
@@ -649,17 +723,43 @@ func (s *Store) GetPlayTimeSeries(
 		alignedFrom := AlignBucketStart(from, GranularityHour, loc)
 		resp.From = alignedFrom
 
-		rows, err := s.Pool.Query(ctx, `
-			SELECT
-				EXTRACT(EPOCH FROM date_trunc('hour', bucket_start))::bigint,
-				dimension_value,
-				COALESCE((metrics_json->>'errorReportCount')::double precision, 0)::bigint,
-				COALESCE((metrics_json->>'distinctUsers')::double precision, 0)::bigint
-			FROM euler_stats.play_vitals_timeseries
-			WHERE package_name = $1 AND metric_set = 'errorCountMetricSet'
-			  AND aggregation_period = 'HOURLY' AND dimension_key = 'reportType'
-			  AND bucket_start >= $2 AND bucket_start <= $3
-		`, pkgName, alignedFrom, to)
+		var rows pgx.Rows
+		var err error
+		if dimType == "app_version" {
+			rows, err = s.Pool.Query(ctx, `
+				SELECT
+					EXTRACT(EPOCH FROM date_trunc('hour', bucket_start))::bigint,
+					split_part(dimension_value, ',', 1),
+					COALESCE((metrics_json->>'errorReportCount')::double precision, 0)::bigint,
+					COALESCE((metrics_json->>'distinctUsers')::double precision, 0)::bigint
+				FROM euler_stats.play_vitals_timeseries
+				WHERE package_name = $1 AND metric_set = 'errorCountMetricSet'
+				  AND aggregation_period = 'HOURLY' AND dimension_key = 'reportType,versionCode'
+				  AND dimension_value IN ('CRASH,' || $4, 'ANR,' || $4)
+				  AND bucket_start >= $2 AND bucket_start <= $3
+			`, pkgName, alignedFrom, to, dimVal)
+		} else if dimType == "overview" {
+			rows, err = s.Pool.Query(ctx, `
+				SELECT
+					EXTRACT(EPOCH FROM date_trunc('hour', bucket_start))::bigint,
+					dimension_value,
+					COALESCE((metrics_json->>'errorReportCount')::double precision, 0)::bigint,
+					COALESCE((metrics_json->>'distinctUsers')::double precision, 0)::bigint
+				FROM euler_stats.play_vitals_timeseries
+				WHERE package_name = $1 AND metric_set = 'errorCountMetricSet'
+				  AND aggregation_period = 'HOURLY' AND dimension_key = 'reportType'
+				  AND bucket_start >= $2 AND bucket_start <= $3
+			`, pkgName, alignedFrom, to)
+		} else {
+			// Hourly vitals are exported per-app or per-versionCode; return zero-filled spine for unsupported dimensions.
+			for _, b := range BuildBucketSpine(alignedFrom, to, GranularityHour, loc) {
+				resp.Points = append(resp.Points, PlayTimeSeriesPoint{
+					Timestamp: b.In(loc),
+					Label:     FormatBucketLabel(b, GranularityHour, loc),
+				})
+			}
+			return resp, nil
+		}
 		if err != nil {
 			return resp, fmt.Errorf("play hourly vitals: %w", err)
 		}
@@ -714,13 +814,6 @@ func (s *Store) GetPlayTimeSeries(
 		resp.Granularity = GranularityDay
 	}
 
-	dimType := "overview"
-	dimVal := ""
-	if country != "" && !strings.EqualFold(country, "all") {
-		dimType = "country"
-		dimVal = country
-	}
-
 	// Date buckets are calendar dates in report_date (DATE column). Align in UTC/date space cleanly.
 	fromDate := time.Date(from.In(loc).Year(), from.In(loc).Month(), from.In(loc).Day(), 0, 0, 0, 0, loc)
 	toDate := time.Date(to.In(loc).Year(), to.In(loc).Month(), to.In(loc).Day(), 0, 0, 0, 0, loc)
@@ -744,116 +837,125 @@ func (s *Store) GetPlayTimeSeries(
 		return p
 	}
 
-	iRows, err := s.Pool.Query(ctx, fmt.Sprintf(`
-		SELECT
-			to_char(date_trunc('%s', report_date::timestamp), 'YYYY-MM-DD'),
-			COALESCE(SUM(daily_device_installs), 0)::bigint,
-			COALESCE(SUM(daily_device_uninstalls), 0)::bigint,
-			COALESCE(SUM(daily_user_installs), 0)::bigint,
-			COALESCE(SUM(daily_user_uninstalls), 0)::bigint,
-			COALESCE(MAX(active_device_installs), 0)::bigint,
-			COALESCE(SUM(install_events), 0)::bigint,
-			COALESCE(SUM(update_events), 0)::bigint
-		FROM euler_stats.play_installs_daily
-		WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
-		  AND report_date >= $4::date AND report_date <= $5::date
-		GROUP BY 1
-	`, truncUnit), pkgName, dimType, dimVal, alignedStart.Format("2006-01-02"), toDate.Format("2006-01-02"))
-	if err != nil {
-		return resp, fmt.Errorf("play ts installs: %w", err)
-	}
-	for iRows.Next() {
-		var key string
-		var di, du, ui, uu, act, ie, ue int64
-		if err := iRows.Scan(&key, &di, &du, &ui, &uu, &act, &ie, &ue); err != nil {
-			iRows.Close()
-			return resp, err
+	if playDimHasInstalls(dimType) {
+		iRows, err := s.Pool.Query(ctx, fmt.Sprintf(`
+			SELECT
+				to_char(date_trunc('%s', report_date::timestamp), 'YYYY-MM-DD'),
+				COALESCE(SUM(daily_device_installs), 0)::bigint,
+				COALESCE(SUM(daily_device_uninstalls), 0)::bigint,
+				COALESCE(SUM(daily_user_installs), 0)::bigint,
+				COALESCE(SUM(daily_user_uninstalls), 0)::bigint,
+				COALESCE(MAX(active_device_installs), 0)::bigint,
+				COALESCE(SUM(install_events), 0)::bigint,
+				COALESCE(SUM(update_events), 0)::bigint
+			FROM euler_stats.play_installs_daily
+			WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
+			  AND report_date >= $4::date AND report_date <= $5::date
+			GROUP BY 1
+		`, truncUnit), pkgName, dimType, dimVal, alignedStart.Format("2006-01-02"), toDate.Format("2006-01-02"))
+		if err != nil {
+			return resp, fmt.Errorf("play ts installs: %w", err)
 		}
-		pt := ensure(key)
-		pt.DeviceInstalls = di
-		pt.DeviceUninstalls = du
-		pt.UserInstalls = ui
-		pt.UserUninstalls = uu
-		pt.ActiveDevices = act
-		pt.InstallEvents = ie
-		pt.UpdateEvents = ue
+		for iRows.Next() {
+			var key string
+			var di, du, ui, uu, act, ie, ue int64
+			if err := iRows.Scan(&key, &di, &du, &ui, &uu, &act, &ie, &ue); err != nil {
+				iRows.Close()
+				return resp, err
+			}
+			pt := ensure(key)
+			pt.DeviceInstalls = di
+			pt.DeviceUninstalls = du
+			pt.UserInstalls = ui
+			pt.UserUninstalls = uu
+			pt.ActiveDevices = act
+			pt.InstallEvents = ie
+			pt.UpdateEvents = ue
+		}
+		iRows.Close()
 	}
-	iRows.Close()
 
-	// Store performance (when overview -> sum across country rows).
-	spWhere := "package_name = $1 AND dimension_type = 'country'"
-	spArgs := []any{pkgName, alignedStart.Format("2006-01-02"), toDate.Format("2006-01-02")}
-	if dimType == "country" {
-		spWhere += " AND dimension_value = $4"
-		spArgs = append(spArgs, dimVal)
-	}
-	spRows, err := s.Pool.Query(ctx, fmt.Sprintf(`
-		SELECT
-			to_char(date_trunc('%s', report_date::timestamp), 'YYYY-MM-DD'),
-			COALESCE(SUM(visitors), 0)::bigint,
-			COALESCE(SUM(acquisitions), 0)::bigint
-		FROM euler_stats.play_store_performance_daily
-		WHERE %s AND report_date >= $2::date AND report_date <= $3::date
-		GROUP BY 1
-	`, truncUnit, spWhere), spArgs...)
-	if err != nil {
-		return resp, fmt.Errorf("play ts store perf: %w", err)
-	}
-	for spRows.Next() {
-		var key string
-		var vis, acq int64
-		if err := spRows.Scan(&key, &vis, &acq); err != nil {
-			spRows.Close()
-			return resp, err
+	// Store performance (overview -> sum across country rows; or specific country / traffic_source).
+	if playDimHasStorePerf(dimType) {
+		spWhere := "package_name = $1 AND dimension_type = 'country'"
+		spArgs := []any{pkgName, alignedStart.Format("2006-01-02"), toDate.Format("2006-01-02")}
+		if dimType == "country" {
+			spWhere += " AND dimension_value = $4"
+			spArgs = append(spArgs, dimVal)
+		} else if dimType == "traffic_source" {
+			spWhere = "package_name = $1 AND dimension_type = 'traffic_source' AND dimension_value = $4"
+			spArgs = append(spArgs, dimVal)
 		}
-		pt := ensure(key)
-		pt.StoreVisitors = vis
-		pt.StoreAcquisitions = acq
-		if vis > 0 {
-			pt.ConversionRate = round2((float64(acq) / float64(vis)) * 100.0)
+		spRows, err := s.Pool.Query(ctx, fmt.Sprintf(`
+			SELECT
+				to_char(date_trunc('%s', report_date::timestamp), 'YYYY-MM-DD'),
+				COALESCE(SUM(visitors), 0)::bigint,
+				COALESCE(SUM(acquisitions), 0)::bigint
+			FROM euler_stats.play_store_performance_daily
+			WHERE %s AND report_date >= $2::date AND report_date <= $3::date
+			GROUP BY 1
+		`, truncUnit, spWhere), spArgs...)
+		if err != nil {
+			return resp, fmt.Errorf("play ts store perf: %w", err)
 		}
+		for spRows.Next() {
+			var key string
+			var vis, acq int64
+			if err := spRows.Scan(&key, &vis, &acq); err != nil {
+				spRows.Close()
+				return resp, err
+			}
+			pt := ensure(key)
+			pt.StoreVisitors = vis
+			pt.StoreAcquisitions = acq
+			if vis > 0 {
+				pt.ConversionRate = round2((float64(acq) / float64(vis)) * 100.0)
+			}
+		}
+		spRows.Close()
 	}
-	spRows.Close()
 
 	// Ratings.
-	rRows, err := s.Pool.Query(ctx, fmt.Sprintf(`
-		SELECT
-			to_char(date_trunc('%s', report_date::timestamp), 'YYYY-MM-DD'),
-			AVG(NULLIF(daily_avg_rating, 0)),
-			MAX(total_avg_rating)
-		FROM euler_stats.play_ratings_daily
-		WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
-		  AND report_date >= $4::date AND report_date <= $5::date
-		GROUP BY 1
-	`, truncUnit), pkgName, dimType, dimVal, alignedStart.Format("2006-01-02"), toDate.Format("2006-01-02"))
-	if err != nil {
-		return resp, fmt.Errorf("play ts ratings: %w", err)
-	}
-	for rRows.Next() {
-		var key string
-		var dAvg, tAvg *float64
-		if err := rRows.Scan(&key, &dAvg, &tAvg); err != nil {
-			rRows.Close()
-			return resp, err
+	if playDimHasInstalls(dimType) {
+		rRows, err := s.Pool.Query(ctx, fmt.Sprintf(`
+			SELECT
+				to_char(date_trunc('%s', report_date::timestamp), 'YYYY-MM-DD'),
+				AVG(NULLIF(daily_avg_rating, 0)),
+				MAX(total_avg_rating)
+			FROM euler_stats.play_ratings_daily
+			WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
+			  AND report_date >= $4::date AND report_date <= $5::date
+			GROUP BY 1
+		`, truncUnit), pkgName, dimType, dimVal, alignedStart.Format("2006-01-02"), toDate.Format("2006-01-02"))
+		if err != nil {
+			return resp, fmt.Errorf("play ts ratings: %w", err)
 		}
-		pt := ensure(key)
-		pt.DailyAvgRating = dAvg
-		pt.TotalAvgRating = tAvg
+		for rRows.Next() {
+			var key string
+			var dAvg, tAvg *float64
+			if err := rRows.Scan(&key, &dAvg, &tAvg); err != nil {
+				rRows.Close()
+				return resp, err
+			}
+			pt := ensure(key)
+			pt.DailyAvgRating = dAvg
+			pt.TotalAvgRating = tAvg
+		}
+		rRows.Close()
 	}
-	rRows.Close()
 
-	// Crashes (overview CSV only has overview/app_version/device/os_version, not country).
-	if dimType == "overview" {
+	// Crashes (overview, app_version, device, os_version CSVs).
+	if playDimHasCrashes(dimType) {
 		cRows, err := s.Pool.Query(ctx, fmt.Sprintf(`
 			SELECT
 				to_char(date_trunc('%s', report_date::timestamp), 'YYYY-MM-DD'),
 				COALESCE(SUM(daily_crashes), 0)::bigint,
 				COALESCE(SUM(daily_anrs), 0)::bigint
 			FROM euler_stats.play_crashes_daily
-			WHERE package_name = $1 AND dimension_type = 'overview'
-			  AND report_date >= $2::date AND report_date <= $3::date
+			WHERE package_name = $1 AND dimension_type = $2 AND dimension_value = $3
+			  AND report_date >= $4::date AND report_date <= $5::date
 			GROUP BY 1
-		`, truncUnit), pkgName, alignedStart.Format("2006-01-02"), toDate.Format("2006-01-02"))
+		`, truncUnit), pkgName, dimType, dimVal, alignedStart.Format("2006-01-02"), toDate.Format("2006-01-02"))
 		if err != nil {
 			return resp, fmt.Errorf("play ts crashes: %w", err)
 		}

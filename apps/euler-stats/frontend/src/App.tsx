@@ -22,6 +22,7 @@ import type {
   PlayPollRunRow,
   PollRunRow,
   RangePreset,
+  TimeRangeSelection,
   TimeSeriesResponse,
 } from './lib/types';
 import { formatRelativeTime, seriesLabel } from './lib/format';
@@ -33,6 +34,7 @@ import { AssetTable, type SortField } from './components/AssetTable';
 import { AssetDetailModal } from './components/AssetDetailModal';
 import { PollLogTab } from './components/PollLogTab';
 import { GooglePlayTab } from './components/GooglePlayTab';
+import { SelectionsBar, type SelectionChip } from './components/SelectionsBar';
 import { useInstallPrompt } from './lib/useInstallPrompt';
 
 type MainTab = 'play' | 'library' | 'polls';
@@ -66,10 +68,17 @@ export default function App() {
     language: '',
     edition: '',
     search: '',
+    itemKey: '',
+    itemTitle: '',
+    hour: null,
+    dow: null,
   }));
+  const [chartTime, setChartTime] = useState<TimeRangeSelection | null>(null);
+  const [showAllInSlice, setShowAllInSlice] = useState(false);
 
   const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [ts, setTs] = useState<TimeSeriesResponse | null>(null);
+  const [sliceTs, setSliceTs] = useState<TimeSeriesResponse | null>(null);
   const [assets, setAssets] = useState<AssetRow[]>([]);
   const [polls, setPolls] = useState<PollRunRow[]>([]);
   const [playPolls, setPlayPolls] = useState<PlayPollRunRow[]>([]);
@@ -85,6 +94,29 @@ export default function App() {
 
   const firstPolledAt = overview?.poller.first_polled_at ?? null;
 
+  const effectiveFilters = useMemo<FilterState>(
+    () =>
+      chartTime
+        ? { ...filters, range: 'custom', from: chartTime.from, to: chartTime.to }
+        : filters,
+    [filters, chartTime],
+  );
+
+  // Parent TimeSeries keeps the full window visible while selected bar(s) highlight in Qlik green.
+  useEffect(() => {
+    if (tab !== 'library' && tab !== 'polls') return;
+    const ac = new AbortController();
+    fetchTimeSeries(filters, undefined, ac.signal)
+      .then((series) => setTs(series))
+      .catch((err) => {
+        if (err.name !== 'AbortError') {
+          setError(err.message || 'Failed to load time series');
+        }
+      });
+    return () => ac.abort();
+  }, [tab, filters, refreshTick]);
+
+  // Overview + AssetTable (and heatmap when time-sliced) reflect the effective slice.
   useEffect(() => {
     if (tab !== 'library' && tab !== 'polls') return;
     const ac = new AbortController();
@@ -92,14 +124,14 @@ export default function App() {
     setError('');
 
     Promise.all([
-      fetchOverview(filters, ac.signal),
-      fetchTimeSeries(filters, undefined, ac.signal),
-      fetchAssets(filters, assetMode, sort, dir, ac.signal),
+      fetchOverview(effectiveFilters, ac.signal),
+      fetchAssets(effectiveFilters, assetMode, sort, dir, ac.signal),
+      chartTime ? fetchTimeSeries(effectiveFilters, undefined, ac.signal) : Promise.resolve(null),
     ])
-      .then(([ov, series, assetList]) => {
+      .then(([ov, assetList, slicedSeries]) => {
         setOverview(ov);
-        setTs(series);
         setAssets(assetList);
+        setSliceTs(slicedSeries);
       })
       .catch((err) => {
         if (err.name !== 'AbortError') {
@@ -109,7 +141,7 @@ export default function App() {
       .finally(() => setLoading(false));
 
     return () => ac.abort();
-  }, [tab, filters, assetMode, sort, dir, refreshTick]);
+  }, [tab, effectiveFilters, assetMode, sort, dir, refreshTick, chartTime]);
 
   useEffect(() => {
     if (tab !== 'polls') return;
@@ -117,7 +149,10 @@ export default function App() {
     Promise.all([
       fetchPolls(80, ac.signal),
       fetchPlayPolls(80, ac.signal),
-      fetchPlayOverview({ granularity: 'day', range: '30d', from: '', to: '', tz: filters.tz, country: '' }, ac.signal),
+      fetchPlayOverview(
+        { granularity: 'day', range: '30d', from: '', to: '', tz: filters.tz, dimType: '', dimValue: '' },
+        ac.signal,
+      ),
       fetchNotifications(40, ac.signal),
     ])
       .then(([ghPolls, pPolls, pOv, notif]) => {
@@ -137,11 +172,15 @@ export default function App() {
   }, []);
 
   const hasActiveFilters = Boolean(
-    filters.release ||
+    chartTime ||
+      filters.hour !== null ||
+      filters.dow !== null ||
+      filters.release ||
       filters.category ||
       filters.subject ||
       filters.language ||
       filters.edition ||
+      filters.itemKey ||
       filters.search.trim(),
   );
 
@@ -160,6 +199,7 @@ export default function App() {
   }, []);
 
   const handleGranularity = (g: Granularity) => {
+    setChartTime(null);
     setFilters((prev) => {
       let nextRange = prev.range;
       if (g === 'hour' && (prev.range === '30d' || prev.range === '90d')) nextRange = '48h';
@@ -182,7 +222,7 @@ export default function App() {
   };
 
   const handleSelectBreakdown = (
-    kind: 'release' | 'subject' | 'language' | 'edition',
+    kind: 'release' | 'category' | 'subject' | 'language' | 'edition',
     value: string,
   ) => {
     setFilters((prev) => ({
@@ -191,7 +231,31 @@ export default function App() {
     }));
   };
 
+  const handleToggleLegendSeries = (key: string) => {
+    if (filters.groupBy === 'release') handleSelectBreakdown('release', key);
+    else if (filters.groupBy === 'language') handleSelectBreakdown('language', key);
+    else if (filters.groupBy === 'edition') handleSelectBreakdown('edition', key);
+  };
+
+  const handleSelectCell = (dow: number, hr: number) => {
+    setFilters((prev) =>
+      prev.dow === dow && prev.hour === hr
+        ? { ...prev, dow: null, hour: null }
+        : { ...prev, dow, hour: hr },
+    );
+  };
+
+  const handleToggleItemFilter = (asset: AssetRow) => {
+    setFilters((prev) =>
+      prev.itemKey === asset.item_key
+        ? { ...prev, itemKey: '', itemTitle: '' }
+        : { ...prev, itemKey: asset.item_key, itemTitle: asset.display_title },
+    );
+  };
+
   const resetFilters = () => {
+    setChartTime(null);
+    setShowAllInSlice(false);
     setFilters((prev) => ({
       ...prev,
       release: '',
@@ -200,8 +264,121 @@ export default function App() {
       language: '',
       edition: '',
       search: '',
+      itemKey: '',
+      itemTitle: '',
+      hour: null,
+      dow: null,
     }));
   };
+
+  const hasSliceFilter = Boolean(chartTime || filters.hour !== null || filters.dow !== null);
+  const displayedAssets = useMemo(() => {
+    if (!hasSliceFilter || showAllInSlice) return assets;
+    return assets.filter((a) => a.window_delta > 0);
+  }, [assets, hasSliceFilter, showAllInSlice]);
+
+  const selectionChips: SelectionChip[] = useMemo(() => {
+    const dowLabels = ['', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const chips: SelectionChip[] = [];
+    if (chartTime) {
+      chips.push({
+        key: 'chartTime',
+        label: 'Time Slice',
+        value: chartTime.label,
+        onClear: () => setChartTime(null),
+      });
+    }
+    if (filters.dow !== null) {
+      chips.push({
+        key: 'dow',
+        label: 'Weekday',
+        value: dowLabels[filters.dow] ?? String(filters.dow),
+        onClear: () => setFilters((p) => ({ ...p, dow: null })),
+      });
+    }
+    if (filters.hour !== null) {
+      chips.push({
+        key: 'hour',
+        label: 'Hour',
+        value: `${String(filters.hour).padStart(2, '0')}:00`,
+        onClear: () => setFilters((p) => ({ ...p, hour: null })),
+      });
+    }
+    if (filters.release) {
+      chips.push({
+        key: 'release',
+        label: 'Release',
+        value: seriesLabel(filters.release),
+        onClear: () => setFilters((p) => ({ ...p, release: '' })),
+      });
+    }
+    if (filters.category) {
+      chips.push({
+        key: 'category',
+        label: 'Category',
+        value: filters.category,
+        onClear: () => setFilters((p) => ({ ...p, category: '' })),
+      });
+    }
+    if (filters.subject) {
+      chips.push({
+        key: 'subject',
+        label: 'Subject',
+        value: filters.subject,
+        onClear: () => setFilters((p) => ({ ...p, subject: '' })),
+      });
+    }
+    if (filters.language) {
+      chips.push({
+        key: 'language',
+        label: 'Language',
+        value: seriesLabel(filters.language),
+        onClear: () => setFilters((p) => ({ ...p, language: '' })),
+      });
+    }
+    if (filters.edition) {
+      chips.push({
+        key: 'edition',
+        label: 'Edition',
+        value: seriesLabel(filters.edition),
+        onClear: () => setFilters((p) => ({ ...p, edition: '' })),
+      });
+    }
+    if (filters.itemKey) {
+      chips.push({
+        key: 'itemKey',
+        label: 'Item',
+        value: filters.itemTitle || filters.itemKey,
+        onClear: () => setFilters((p) => ({ ...p, itemKey: '', itemTitle: '' })),
+      });
+    }
+    if (filters.search.trim()) {
+      chips.push({
+        key: 'search',
+        label: 'Search',
+        value: filters.search.trim(),
+        onClear: () => setFilters((p) => ({ ...p, search: '' })),
+      });
+    }
+    return chips;
+  }, [chartTime, filters]);
+
+  const legendKeys = useMemo(() => {
+    if (!overview) return undefined;
+    if (filters.groupBy === 'release') return overview.filters.releases;
+    if (filters.groupBy === 'language') return overview.filters.languages;
+    if (filters.groupBy === 'edition') return overview.filters.editions;
+    return undefined;
+  }, [overview, filters.groupBy]);
+
+  const activeLegendSeries =
+    filters.groupBy === 'release'
+      ? filters.release
+      : filters.groupBy === 'language'
+        ? filters.language
+        : filters.groupBy === 'edition'
+          ? filters.edition
+          : '';
 
   const switchTab = (next: MainTab) => {
     setTab(next);
@@ -359,7 +536,7 @@ export default function App() {
           {tab === 'library' && (
             <div className="flex items-center gap-2 text-xs">
               <a
-                href={csvExportURL('timeseries', filters)}
+                href={csvExportURL('timeseries', effectiveFilters)}
                 className="rounded-full border border-[#d5cdb8] bg-[#fffcf6] px-3 py-1.5 font-medium text-[#4a4338] hover:text-[#1c1914] hover:border-[#8d6b32] transition-colors"
               >
                 Export Time-Series CSV
@@ -381,6 +558,7 @@ export default function App() {
             defaultTz={defaultTimezone()}
             tzOptions={tzOptions}
             refreshTick={refreshTick}
+            onOpenPolls={() => switchTab('polls')}
           />
         )}
 
@@ -430,7 +608,10 @@ export default function App() {
                       <button
                         key={r}
                         type="button"
-                        onClick={() => setFilters((p) => ({ ...p, range: r }))}
+                        onClick={() => {
+                          setChartTime(null);
+                          setFilters((p) => ({ ...p, range: r }));
+                        }}
                         className={`whitespace-nowrap shrink-0 rounded-full px-2.5 py-1.5 sm:py-1 cursor-pointer transition-colors ${
                           filters.range === r
                             ? 'bg-[#8d6b32] text-[#fffcf6] font-medium'
@@ -582,7 +763,10 @@ export default function App() {
 
                   <select
                     value={filters.tz}
-                    onChange={(e) => setFilters((p) => ({ ...p, tz: e.target.value }))}
+                    onChange={(e) => {
+                      setChartTime(null);
+                      setFilters((p) => ({ ...p, tz: e.target.value }));
+                    }}
                     className="col-span-2 sm:col-span-1 sm:ml-auto rounded-lg border border-[#d5cdb8] bg-[#f7f3ea] px-2.5 py-1.5 text-sm sm:text-xs text-[#1c1914]"
                     title="Display timezone"
                   >
@@ -606,13 +790,31 @@ export default function App() {
               </div>
             </div>
 
+            <SelectionsBar
+              chips={selectionChips}
+              onClearAll={resetFilters}
+              hint="Click or drag chart bars, click legend series, or tap heatmap & breakdown bars to cross-filter like Qlik."
+            />
+
             {loading && !overview ? (
               <div className="py-16 text-center text-sm text-[#6e6558]">
                 Loading Professor Euler release statistics...
               </div>
             ) : (
               <>
-                {overview && <KpiCards overview={overview} tz={filters.tz} />}
+                {overview && (
+                  <KpiCards
+                    overview={overview}
+                    tz={filters.tz}
+                    selectedRelease={filters.release}
+                    selectedLanguage={filters.language}
+                    selectedEdition={filters.edition}
+                    onToggleRelease={(rel) => handleSelectBreakdown('release', rel)}
+                    onToggleLanguage={(lang) => handleSelectBreakdown('language', lang)}
+                    onToggleEdition={(ed) => handleSelectBreakdown('edition', ed)}
+                    onOpenPolls={() => switchTab('polls')}
+                  />
+                )}
 
                 {ts && overview && (
                   <TimeSeriesChart
@@ -622,32 +824,60 @@ export default function App() {
                     firstPolledAt={overview.poller.first_polled_at}
                     baselineTotal={overview.all_time.baseline_downloads}
                     tz={filters.tz}
+                    selectedRange={chartTime}
+                    onSelectRange={setChartTime}
+                    activeSeriesKey={activeLegendSeries}
+                    legendKeys={legendKeys}
+                    onToggleSeries={handleToggleLegendSeries}
                   />
                 )}
 
-                {ts && overview && (
+                {(sliceTs || ts) && overview && (
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5">
                     <ActivityHeatmap
-                      hourlyProfile={ts.hourly_profile}
-                      matrix={ts.activity_matrix}
+                      hourlyProfile={(chartTime && sliceTs ? sliceTs : ts)!.hourly_profile}
+                      matrix={(chartTime && sliceTs ? sliceTs : ts)!.activity_matrix}
                       tz={filters.tz}
+                      selectedHour={filters.hour}
+                      selectedDow={filters.dow}
+                      onSelectHour={(hr) => setFilters((p) => ({ ...p, hour: hr }))}
+                      onSelectDow={(dow) => setFilters((p) => ({ ...p, dow, hour: null }))}
+                      onSelectCell={handleSelectCell}
                     />
                     <BreakdownsGrid
                       overview={overview}
+                      selectedFilters={{
+                        release: filters.release,
+                        category: filters.category,
+                        subject: filters.subject,
+                        language: filters.language,
+                        edition: filters.edition,
+                      }}
                       onSelectFilter={handleSelectBreakdown}
                     />
                   </div>
                 )}
 
                 <AssetTable
-                  assets={assets}
+                  assets={displayedAssets}
                   mode={assetMode}
                   onChangeMode={setAssetMode}
                   sort={sort}
                   dir={dir}
                   onSort={handleSort}
                   onSelectAsset={setSelectedAsset}
-                  csvUrl={csvExportURL('assets', filters, assetMode)}
+                  csvUrl={csvExportURL('assets', effectiveFilters, assetMode)}
+                  sliceActive={hasSliceFilter}
+                  totalMatchingCount={assets.length}
+                  showAllInSlice={showAllInSlice}
+                  onToggleShowAllInSlice={() => setShowAllInSlice((v) => !v)}
+                  selectedItemKey={filters.itemKey}
+                  selectedRelease={filters.release}
+                  selectedSubject={filters.subject}
+                  selectedLanguage={filters.language}
+                  selectedEdition={filters.edition}
+                  onToggleItemFilter={handleToggleItemFilter}
+                  onToggleFacet={(facet, val) => handleSelectBreakdown(facet, val)}
                 />
               </>
             )}
@@ -736,6 +966,8 @@ export default function App() {
           mode={assetMode}
           filters={filters}
           firstPolledAt={firstPolledAt}
+          isItemIsolated={filters.itemKey === selectedAsset.item_key}
+          onIsolateInDashboard={handleToggleItemFilter}
           onClose={() => setSelectedAsset(null)}
         />
       )}
