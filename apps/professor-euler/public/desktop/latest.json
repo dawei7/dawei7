@@ -1,6 +1,6 @@
 {
-  "version": "5.5.1",
-  "notes": "Curriculum updates pick up newly published courses and workbooks immediately even when a catalog revision number wasn't bumped, and startup cleanup protects newer editions before refresh.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.5.1.exe",
-  "sha256": "8594e4066c79dddb1c0a343685613819ab620b44d5ad2f64232acde9078691c4"
+  "version": "5.5.3",
+  "notes": "Curriculum path gains a persistent Show whole path switch and synced Current course selector; course map taps highlight only the connected path with a jump button and route arrows cleanly around course boxes.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.5.3.exe",
+  "sha256": "92e53cac0387764e112a00c8a4e766cc312a80ca0356f9ac72f5ca3c23a1b9a2"
 }
