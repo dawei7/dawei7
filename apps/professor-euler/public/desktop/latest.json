@@ -1,6 +1,6 @@
 {
-  "version": "5.5.0",
-  "notes": "Curriculum workbooks stay outside My books, older editions clean up automatically, topic formulas render crisply, and My books scrolls smoothly.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.5.0.exe",
-  "sha256": "c0587d558edb0f9ada1703d393aeca56dabff3a8acd6d9f0c3cb05b2a37d2de4"
+  "version": "5.5.1",
+  "notes": "Curriculum updates pick up newly published courses and workbooks immediately even when a catalog revision number wasn't bumped, and startup cleanup protects newer editions before refresh.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.5.1.exe",
+  "sha256": "8594e4066c79dddb1c0a343685613819ab620b44d5ad2f64232acde9078691c4"
 }
