@@ -1,6 +1,6 @@
 {
-  "version": "5.5.3",
-  "notes": "Curriculum path gains a persistent Show whole path switch and synced Current course selector; course map taps highlight only the connected path with a jump button and route arrows cleanly around course boxes.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.5.3.exe",
-  "sha256": "92e53cac0387764e112a00c8a4e766cc312a80ca0356f9ac72f5ca3c23a1b9a2"
+  "version": "5.6.0",
+  "notes": "Achievement celebration pop-ups reveal the highlighted puzzle piece on Euler's portrait and the next chapter of Euler's life; 132 course collection cards with Bronze, Silver, Gold, and Platinum tiers, 132 authentic mathematician portraits, and localized biographies and course rationale in all 21 languages.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.6.0.exe",
+  "sha256": "2a9b8855ae840bad942d551430cf8339b8f0740e2d8fa954ceb4f8ca2ef6ca94"
 }
