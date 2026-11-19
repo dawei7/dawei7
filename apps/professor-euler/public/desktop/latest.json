@@ -1,6 +1,6 @@
 {
-  "version": "5.6.0",
-  "notes": "Achievement celebration pop-ups reveal the highlighted puzzle piece on Euler's portrait and the next chapter of Euler's life; 132 course collection cards with Bronze, Silver, Gold, and Platinum tiers, 132 authentic mathematician portraits, and localized biographies and course rationale in all 21 languages.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.6.0.exe",
-  "sha256": "2a9b8855ae840bad942d551430cf8339b8f0740e2d8fa954ceb4f8ca2ef6ca94"
+  "version": "5.6.1",
+  "notes": "Smooth Collection Cards gallery scrolling via pre-composited card portraits, flattened card layout nodes, and scroll-paused background portrait warming, alongside achievement celebration pop-ups and 132 course collection cards with 21-language mathematician biographies.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.6.1.exe",
+  "sha256": "95ea001eb1681672ac061b939f6f1bd5865bbee78e11806c0ce35426e10958ef"
 }
