@@ -1,6 +1,6 @@
 {
-  "version": "5.6.1",
-  "notes": "Smooth Collection Cards gallery scrolling via pre-composited card portraits, flattened card layout nodes, and scroll-paused background portrait warming, alongside achievement celebration pop-ups and 132 course collection cards with 21-language mathematician biographies.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.6.1.exe",
-  "sha256": "95ea001eb1681672ac061b939f6f1bd5865bbee78e11806c0ce35426e10958ef"
+  "version": "5.7.0",
+  "notes": "Professor Euler's own card with a portrait for each of its 100 steps and a preview of every step, Collection Cards in eight materials, 99 achievements and a side achievement, Continue in the Curriculum, and curriculum workbooks without export or annotations.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.7.0.exe",
+  "sha256": "347f44b8aedcd989e90130f7e5c6469298f6027154fe944e219ffde8e6c07fdf"
 }
