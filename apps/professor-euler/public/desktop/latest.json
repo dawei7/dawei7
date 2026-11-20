@@ -1,6 +1,6 @@
 {
-  "version": "5.8.1",
-  "notes": "Settings > Data & sync puts Google Drive sync first; backups are an advanced option there and leave curriculum workbooks out, which a restore downloads again with your work.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.8.1.exe",
-  "sha256": "7f6c13b620ec95b2e8c59ff6720e40c8914e9d78b44efad9f3ea0652def837ea"
+  "version": "5.8.2",
+  "notes": "A new All workbooks card on the Curriculum tab: download every published workbook at once, or update all of them in one click.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.8.2.exe",
+  "sha256": "e96e565ae52a62445d26ea623b36cc8e52eb4c7b304c77176232fb3ee210ba86"
 }
