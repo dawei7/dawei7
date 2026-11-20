@@ -1,6 +1,6 @@
 {
-  "version": "5.8.0",
-  "notes": "Curriculum workbooks can now be delivered in a protected form that only Professor Euler can open; the work in your workbooks is kept.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.8.0.exe",
-  "sha256": "17bc9f474743899334c90a41137473fb6ae63485b6c8690fb9a3046f293cf54e"
+  "version": "5.8.1",
+  "notes": "Settings > Data & sync puts Google Drive sync first; backups are an advanced option there and leave curriculum workbooks out, which a restore downloads again with your work.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.8.1.exe",
+  "sha256": "7f6c13b620ec95b2e8c59ff6720e40c8914e9d78b44efad9f3ea0652def837ea"
 }
