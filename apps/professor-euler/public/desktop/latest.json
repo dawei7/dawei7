@@ -1,6 +1,6 @@
 {
-  "version": "5.8.2",
-  "notes": "A new All workbooks card on the Curriculum tab: download every published workbook at once, or update all of them in one click.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-5.8.2.exe",
-  "sha256": "e96e565ae52a62445d26ea623b36cc8e52eb4c7b304c77176232fb3ee210ba86"
+  "version": "6.0.0",
+  "notes": "Professor Euler 6.0 introduces Arithmetic Bootcamp: 16 stages from Kindergarten to Mental Calculation Championship with direct keypad entry, Competitive Mastery Runs, 2-Minute Sprints, Practice Mode with step-by-step smart solutions, a Systematic Memorization Trainer across 10 reference decks, 100 collectible Euler-life cards, and the 437-page Handbook of Mental and Competitive Arithmetic.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-6.0.0.exe",
+  "sha256": "b452234782af59db41abca7ea283582c1b209425e67ddd4d7281419ef97332d1"
 }
