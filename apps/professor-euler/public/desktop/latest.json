@@ -1,6 +1,6 @@
 {
-  "version": "6.3.0",
-  "notes": "New: ask your own AI about any page. Click the purple question mark, mark an area or up to five pages, pick one of eleven prepared questions or write your own, and set how it answers with four dials (with a recommendation for each course). On Windows the images open in a folder and the question is copied, ready for the AI you already use, such as Gemini or ChatGPT. No API key. Check now asks once who grades, the app's AI or your own AI app; hold Check to choose again. Curriculum workbooks take no frames of your own any more.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-6.3.0.exe",
-  "sha256": "43fae887f386bac06706a30a0e989a775449cf9b47742fdd8d1d213d6eab5b00"
+  "version": "6.4.0",
+  "notes": "New in the Professor Euler Curriculum: every exercise shows its difficulty from 1 to 10, on the page, in the list and on the exercise you work on (Settings > Reading). A new guide explains how a topic is mastered and how points follow difficulty. Points now show for every course, unit and topic, with each exercise as a tile. The Curriculum opens at once, even with many workbooks. Updates are offered again: 6.3.0 was passed over because its notes were too long.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-6.4.0.exe",
+  "sha256": "0d2140c2e312dd2c1821668a40326ba270238f24551b3bc95e652e0edc7bb45e"
 }
