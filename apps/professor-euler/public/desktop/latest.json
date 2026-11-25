@@ -1,6 +1,6 @@
 {
-  "version": "6.2.0",
-  "notes": "Music, tidied up: one clear row for Songs, Playlists and sorting, Play and Shuffle side by side, and a Now playing screen that shows the queue beside the song when the device is on its side. No more broken labels on phones. Calculator, easier to find your way: three fixed sections under the editor (Result, Functions, Saved), a functions catalog whose areas open to their topics, and keys that stand beside your work in landscape instead of covering it.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-6.2.0.exe",
-  "sha256": "4fc95a64fd4e815e3d3bd837f4b26fb3e12eb3e4aa89e536b00c37d025ad5d36"
+  "version": "6.3.0",
+  "notes": "New: ask your own AI about any page. Click the purple question mark, mark an area or up to five pages, pick one of eleven prepared questions or write your own, and set how it answers with four dials (with a recommendation for each course). On Windows the images open in a folder and the question is copied, ready for the AI you already use, such as Gemini or ChatGPT. No API key. Check now asks once who grades, the app's AI or your own AI app; hold Check to choose again. Curriculum workbooks take no frames of your own any more.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-6.3.0.exe",
+  "sha256": "43fae887f386bac06706a30a0e989a775449cf9b47742fdd8d1d213d6eab5b00"
 }
