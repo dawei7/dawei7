@@ -1,6 +1,6 @@
 {
-  "version": "6.1.0",
-  "notes": "A clearer Curriculum: Today, Path, Map, Courses and Rewards each have a view of their own, and navigation uses symbols. The course map is a calm tree that fits your screen: tap a course to light up what it builds on and leads to, and open its details only when you want them. Every course now has a difficulty from 1 to 99, a five-part profile and a Proof-based label where it applies. Paths run easiest first and can be reordered without breaking prerequisites.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-6.1.0.exe",
-  "sha256": "797ba7bf5e8b104429e366cc9b6117132c7f926529e1207c10db0f0c81124f9b"
+  "version": "6.2.0",
+  "notes": "Music, tidied up: one clear row for Songs, Playlists and sorting, Play and Shuffle side by side, and a Now playing screen that shows the queue beside the song when the device is on its side. No more broken labels on phones. Calculator, easier to find your way: three fixed sections under the editor (Result, Functions, Saved), a functions catalog whose areas open to their topics, and keys that stand beside your work in landscape instead of covering it.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-6.2.0.exe",
+  "sha256": "4fc95a64fd4e815e3d3bd837f4b26fb3e12eb3e4aa89e536b00c37d025ad5d36"
 }
