@@ -1,6 +1,6 @@
 {
-  "version": "6.0.2",
-  "notes": "Copy and paste on every sheet: select with a rectangle or a free loop, copy, and tap anywhere - in this or any other sheet or note - to paste. The last copy is always ready, and five slots keep what you save in them, ideal for a table you need again and again. Copy, Duplicate and Delete now take tables, graphs and figures along. Arithmetic Bootcamp progress and Euler cards now merge between your devices instead of being overwritten.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-6.0.2.exe",
-  "sha256": "8f886331e3fb076adabadb122fd80cf3824b51d00f2a3ee2cae62c9c445ca29a"
+  "version": "6.1.0",
+  "notes": "A clearer Curriculum: Today, Path, Map, Courses and Rewards each have a view of their own, and navigation uses symbols. The course map is a calm tree that fits your screen: tap a course to light up what it builds on and leads to, and open its details only when you want them. Every course now has a difficulty from 1 to 99, a five-part profile and a Proof-based label where it applies. Paths run easiest first and can be reordered without breaking prerequisites.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-6.1.0.exe",
+  "sha256": "797ba7bf5e8b104429e366cc9b6117132c7f926529e1207c10db0f0c81124f9b"
 }
