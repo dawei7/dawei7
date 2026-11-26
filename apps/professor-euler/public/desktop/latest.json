@@ -1,6 +1,6 @@
 {
-  "version": "6.6.0",
-  "notes": "New in the Professor Euler Curriculum: mastering a topic now has its moment. Right after the grade that masters the last kind of exercise, Topic mastered shows the topic, how far its unit is and, with the unit's last topic, that the Unit Review begins. In a workbook's contents, mastered topics and units wear a green tick.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-6.6.0.exe",
-  "sha256": "e41b27799d149ac9d15599eea0d4d895616bb410c0f10fd022b99f5e96aadfd6"
+  "version": "7.0.0",
+  "notes": "Professor Euler 7.0.0 brings major Curriculum Collection upgrades: 8 difficulty-based card value classes (Common to Transcendent), 93 Collectible Card Sets across all 34 preset paths, 41 career paths and 18 mathematical combinations with bespoke artwork, KaTeX formulas, formula explanations and inspiring passages, slender colorful outer floral Mastery Laurels with an on/off toggle, recommended path ordering, course default modes and smoother 144 Hz scrolling.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-7.0.0.exe",
+  "sha256": "a027c642978c313c8b13bd9af3975f5d2afea6482d89b81c0bac31fc34a3b58c"
 }
