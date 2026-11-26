@@ -1,6 +1,6 @@
 {
-  "version": "6.5.0",
-  "notes": "New in the Professor Euler Curriculum: every exercise shows its kind of exercise as a letter beside its difficulty, and a target marks the exercises that master a kind: on the page, in the exercise list and in each topic, which also names the shortest way to mastery. Tap an exercise's badge on the page to open it. What an exercise is about stays hidden until you show it. Frames now show their outlines only by default; Settings > Reading brings the symbols back.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-6.5.0.exe",
-  "sha256": "de9a650e6d427aca948585d334d24e6db0e5e05f9e4935502e7c0e975b3a970e"
+  "version": "6.6.0",
+  "notes": "New in the Professor Euler Curriculum: mastering a topic now has its moment. Right after the grade that masters the last kind of exercise, Topic mastered shows the topic, how far its unit is and, with the unit's last topic, that the Unit Review begins. In a workbook's contents, mastered topics and units wear a green tick.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-6.6.0.exe",
+  "sha256": "e41b27799d149ac9d15599eea0d4d895616bb410c0f10fd022b99f5e96aadfd6"
 }
