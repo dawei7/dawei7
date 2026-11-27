@@ -1,6 +1,6 @@
 {
-  "version": "7.1.0",
-  "notes": "Professor Euler 7.1.0 adds full Persian (فارسی) support across Android and Windows — our 22nd language — with formal academic Persian mathematical terminology, RTL layout, and complete localization of the entire UI, all 132 mathematician cards, all 93 Card Sets, the Curriculum and Bootcamp, and the 323-function Calculator manual and guide.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-7.1.0.exe",
-  "sha256": "9ac01f696c7624d8b430d7147486c96b2dde039b3046024051e87cd8769812ee"
+  "version": "7.1.1",
+  "notes": "Professor Euler 7.1.1 adds three learning path order modes — Recommended, Difficulty (ascending difficulty respecting prerequisites), and Custom (automatically saved whenever you reorder courses while Recommended and Difficulty reset cleanly to their presets) — plus horizontal drag-and-drop reordering for your chosen learning path chips, synced across devices.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-7.1.1.exe",
+  "sha256": "357f4f03b2e3dd3294d21e36d56dfbabcaf034c64cb4b7dec4f3cf905eddb535"
 }
