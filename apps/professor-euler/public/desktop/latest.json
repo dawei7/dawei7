@@ -1,6 +1,6 @@
 {
-  "version": "7.1.1",
-  "notes": "Professor Euler 7.1.1 adds three learning path order modes — Recommended, Difficulty (ascending difficulty respecting prerequisites), and Custom (automatically saved whenever you reorder courses while Recommended and Difficulty reset cleanly to their presets) — plus horizontal drag-and-drop reordering for your chosen learning path chips, synced across devices.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-7.1.1.exe",
-  "sha256": "357f4f03b2e3dd3294d21e36d56dfbabcaf034c64cb4b7dec4f3cf905eddb535"
+  "version": "7.1.2",
+  "notes": "Professor Euler 7.1.2 fixes dragging your learning paths left and right: a path no longer gets stuck halfway while it passes another, the next drag right after a drop works at once, and the row now scrolls by itself when you hold a path near its edge, so you can move it past paths that are out of view.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-7.1.2.exe",
+  "sha256": "dfe3bab46ca5624180dac056797d9dc969cf9c0a6993efe5b2a34cd2a5c75c31"
 }
