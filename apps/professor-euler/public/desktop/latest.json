@@ -1,6 +1,6 @@
 {
-  "version": "7.0.2",
-  "notes": "Professor Euler 7.0.2 redesigns Mastery Laurels as full traditional Roman Julius Caesar wreaths set with the 12 stones of the Choshen in fixed sockets across Bronze, Bronze (3 gems), Silver (6 gems), Gold (10 gems) and Transcendent Crystal (12 gems), restores full-size portraits with subtle hover-brightening laurels, removes the laurel toggle, and stamps an authentic e^{iπ} crimson Roman wax seal onto Ruby+ cards.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-7.0.2.exe",
-  "sha256": "9621ed2c451e81bfde3b104936ec3e061ab70d06f54fd039aab778584233b5dd"
+  "version": "7.1.0",
+  "notes": "Professor Euler 7.1.0 adds full Persian (فارسی) support across Android and Windows — our 22nd language — with formal academic Persian mathematical terminology, RTL layout, and complete localization of the entire UI, all 132 mathematician cards, all 93 Card Sets, the Curriculum and Bootcamp, and the 323-function Calculator manual and guide.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-7.1.0.exe",
+  "sha256": "9ac01f696c7624d8b430d7147486c96b2dde039b3046024051e87cd8769812ee"
 }
