@@ -1,6 +1,6 @@
 {
-  "version": "7.0.0",
-  "notes": "Professor Euler 7.0.0 brings major Curriculum Collection upgrades: 8 difficulty-based card value classes (Common to Transcendent), 93 Collectible Card Sets across all 34 preset paths, 41 career paths and 18 mathematical combinations with bespoke artwork, KaTeX formulas, formula explanations and inspiring passages, slender colorful outer floral Mastery Laurels with an on/off toggle, recommended path ordering, course default modes and smoother 144 Hz scrolling.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-7.0.0.exe",
-  "sha256": "a027c642978c313c8b13bd9af3975f5d2afea6482d89b81c0bac31fc34a3b58c"
+  "version": "7.0.1",
+  "notes": "Professor Euler 7.0.1 fixes math rendering in Card Set formula explanations and passages across all 21 languages, and introduces the \"Specially reviewed\" quality badge for workbook editions marked quality: perfect (per exact language and tablet/phone format).",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-7.0.1.exe",
+  "sha256": "676e809331e751915e12d53466ff6a18f7e348692486287662234e5f43444e9c"
 }
