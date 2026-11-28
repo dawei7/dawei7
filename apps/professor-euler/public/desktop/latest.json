@@ -1,6 +1,6 @@
 {
-  "version": "7.1.3",
-  "notes": "Professor Euler 7.1.3: writing in a table's cells no longer moves the table or opens its editor, because the table's button and resize handle now sit outside the table. A new Perfect shapes switch on the toolbar turns shape recognition off when you want your strokes kept as drawn, for example for long division; a held straight line always straightens.",
-  "url": "https://euler.dawei7.com/desktop/Professor-Euler-7.1.3.exe",
-  "sha256": "ad63343df7fb848fd106663483800aa283eff539e5385657d7de6ddfa079307a"
+  "version": "7.1.4",
+  "notes": "Professor Euler 7.1.4: Ask your AI has a third choice, Cut-out. It sends the selected exercise as its cut-out to your own AI app (Gemini, ChatGPT and others): the context marked for it, the exercise, the book's solution where there is one, and your sheet if you like. Nothing needs marking, and no API key is needed. For a hint or a check of your own work, your AI app is told to use the solution only as a reference and not to give it away.",
+  "url": "https://euler.dawei7.com/desktop/Professor-Euler-7.1.4.exe",
+  "sha256": "76e1916558255a84d9868718ba239ec1d658e6301fcdfaca3208312374685d1d"
 }
